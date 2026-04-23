@@ -11,6 +11,8 @@ import threading
 import logging
 import uuid
 import time
+import zipfile
+import shutil
 from urllib.parse import urlparse
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -1053,7 +1055,367 @@ def upload_labelme_dataset():
         
     except Exception as e:
         return jsonify({'error': f'Failed to process LabelMe dataset: {str(e)}'}), 500
-        
+
+
+@app.route('/api/upload/roboflow', methods=['POST'])
+def upload_roboflow_dataset():
+    """上传Roboflow格式ZIP数据集"""
+    temp_dir = None
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if not file or file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        if not file.filename.lower().endswith('.zip'):
+            return jsonify({'error': '仅支持 .zip 格式的 Roboflow 数据集'}), 400
+
+        # 文件大小限制 500MB
+        file.seek(0, 2)
+        file_size = file.tell()
+        file.seek(0)
+        if file_size > 500 * 1024 * 1024:
+            return jsonify({'error': '文件大小超过 500MB 限制'}), 400
+
+        # 创建临时目录
+        temp_dir = tempfile.mkdtemp()
+
+        # 保存 ZIP 文件到临时目录
+        zip_path = os.path.join(temp_dir, 'dataset.zip')
+        file.save(zip_path)
+
+        # 解压 ZIP 文件
+        extract_dir = os.path.join(temp_dir, 'extracted')
+        os.makedirs(extract_dir, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            for member in zip_ref.namelist():
+                # 安全检查：跳过包含 .. 或绝对路径的条目
+                if '..' in member or member.startswith('/'):
+                    continue
+                zip_ref.extract(member, extract_dir)
+
+        # 读取现有的类别和标注信息
+        classes = []
+        if os.path.exists(CLASSES_FILE):
+            with open(CLASSES_FILE, 'r', encoding='utf-8') as f:
+                classes = json.load(f)
+
+        annotations = {}
+        if os.path.exists(ANNOTATIONS_FILE):
+            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+                annotations = json.load(f)
+
+        existing_class_names = {cls['name'] for cls in classes}
+
+        # 查找 data.yaml
+        data_yaml_path = None
+        # 优先查找根目录
+        root_yaml = os.path.join(extract_dir, 'data.yaml')
+        if os.path.exists(root_yaml):
+            data_yaml_path = root_yaml
+        else:
+            # 搜索第一层子目录
+            for item in os.listdir(extract_dir):
+                item_path = os.path.join(extract_dir, item)
+                if os.path.isdir(item_path):
+                    sub_yaml = os.path.join(item_path, 'data.yaml')
+                    if os.path.exists(sub_yaml):
+                        data_yaml_path = sub_yaml
+                        extract_dir = item_path
+                        break
+
+        # 解析类别信息
+        class_names = {}  # id -> name
+        warnings = []
+
+        if data_yaml_path and os.path.exists(data_yaml_path):
+            import yaml
+            with open(data_yaml_path, 'r', encoding='utf-8') as f:
+                data_yaml = yaml.safe_load(f)
+
+            if data_yaml and 'names' in data_yaml:
+                names = data_yaml['names']
+                if isinstance(names, dict):
+                    class_names = {int(k): str(v) for k, v in names.items()}
+                elif isinstance(names, list):
+                    class_names = {i: str(name) for i, name in enumerate(names)}
+
+        # 定义图片扩展名
+        image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif')
+
+        # 收集所有图片和标注文件
+        # 优先扫描标准 YOLO 目录结构
+        standard_splits = ['train', 'val', 'valid', 'test']
+        image_files = {}  # basename -> full path
+        label_files = {}  # basename -> full path
+
+        for split in standard_splits:
+            split_dir = os.path.join(extract_dir, split)
+            if not os.path.exists(split_dir):
+                continue
+
+            images_dir = os.path.join(split_dir, 'images')
+            labels_dir = os.path.join(split_dir, 'labels')
+
+            if os.path.exists(images_dir):
+                for filename in os.listdir(images_dir):
+                    if filename.lower().endswith(image_extensions):
+                        basename = os.path.splitext(filename)[0]
+                        image_files[basename] = os.path.join(images_dir, filename)
+
+            if os.path.exists(labels_dir):
+                for filename in os.listdir(labels_dir):
+                    if filename.lower().endswith('.txt'):
+                        basename = os.path.splitext(filename)[0]
+                        label_files[basename] = os.path.join(labels_dir, filename)
+
+        # 如果标准目录没找到图片，递归扫描整个解压目录
+        if not image_files:
+            for root, dirs, files in os.walk(extract_dir):
+                for filename in files:
+                    if filename.lower().endswith(image_extensions):
+                        basename = os.path.splitext(filename)[0]
+                        if basename not in image_files:
+                            image_files[basename] = os.path.join(root, filename)
+                    elif filename.lower().endswith('.txt'):
+                        basename = os.path.splitext(filename)[0]
+                        if basename not in label_files:
+                            label_files[basename] = os.path.join(root, filename)
+
+        if not image_files:
+            return jsonify({'error': 'ZIP 文件中未找到图片'}), 400
+
+        # 如果没有 data.yaml，从标注文件推断类别
+        if not class_names and label_files:
+            max_class_id = -1
+            for label_path in label_files.values():
+                with open(label_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            parts = line.split()
+                            if parts:
+                                try:
+                                    class_id = int(parts[0])
+                                    max_class_id = max(max_class_id, class_id)
+                                except ValueError:
+                                    pass
+            if max_class_id >= 0:
+                class_names = {i: f'class_{i}' for i in range(max_class_id + 1)}
+                warnings.append('未找到 data.yaml，使用默认类别名称，请手动编辑类别名称')
+
+        # 同步类别信息
+        for class_id, name in sorted(class_names.items()):
+            if name not in existing_class_names:
+                new_color = '#{:06x}'.format(hash(name) % 0x1000000)
+                classes.append({'name': name, 'color': new_color})
+                existing_class_names.add(name)
+
+        # 处理图片和标注
+        uploaded_files = []
+        annotations_imported = 0
+
+        for basename, image_path in image_files.items():
+            filename = os.path.basename(image_path)
+            dest_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+            # 跳过已存在的同名文件
+            if os.path.exists(dest_path):
+                continue
+
+            # 复制图片到上传目录
+            shutil.copy2(image_path, dest_path)
+            uploaded_files.append(filename)
+
+            # 获取图片尺寸
+            try:
+                img = Image.open(dest_path)
+                width, height = img.size
+            except Exception:
+                width, height = 0, 0
+
+            # 查找对应的标注文件
+            if basename in label_files and width > 0 and height > 0:
+                label_path = label_files[basename]
+                image_annotations = []
+
+                with open(label_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        parts = line.split()
+                        if len(parts) < 5:
+                            continue
+
+                        try:
+                            class_id = int(parts[0])
+                        except ValueError:
+                            continue
+
+                        class_name = class_names.get(class_id, f'class_{class_id}')
+                        color = '#000000'
+                        for cls in classes:
+                            if cls['name'] == class_name:
+                                color = cls['color']
+                                break
+
+                        coords = [float(p) for p in parts[1:]]
+
+                        if len(coords) == 4:
+                            # 边界框格式: cx cy w h
+                            cx, cy, bw, bh = coords
+                            x_min = (cx - bw / 2) * width
+                            y_min = (cy - bh / 2) * height
+                            x_max = (cx + bw / 2) * width
+                            y_max = (cy + bh / 2) * height
+                            points = [[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]]
+                            ann_type = 'rectangle'
+                        elif len(coords) >= 6 and len(coords) % 2 == 0:
+                            # 多边形格式: x1 y1 x2 y2 ...
+                            points = []
+                            for i in range(0, len(coords), 2):
+                                x = coords[i] * width
+                                y = coords[i + 1] * height
+                                points.append([x, y])
+                            ann_type = 'polygon'
+                        else:
+                            continue
+
+                        annotation = {
+                            'class': class_name,
+                            'color': color,
+                            'points': points,
+                            'type': ann_type
+                        }
+                        image_annotations.append(annotation)
+                        annotations_imported += 1
+
+                if image_annotations:
+                    annotations[filename] = image_annotations
+
+        # 保存更新后的类别和标注信息
+        os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
+        with open(CLASSES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(classes, f, indent=2, ensure_ascii=False)
+
+        with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(annotations, f, indent=2, ensure_ascii=False)
+
+        result = {
+            'message': 'Roboflow dataset imported successfully',
+            'images_imported': len(uploaded_files),
+            'annotations_imported': annotations_imported,
+            'classes': [cls['name'] for cls in classes],
+        }
+        if warnings:
+            result['warnings'] = warnings
+
+        return jsonify(result)
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to process Roboflow dataset: {str(e)}'}), 500
+    finally:
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@app.route('/api/rotate-image', methods=['POST'])
+def rotate_image():
+    """旋转图片及标注"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        image_name = data.get('image_name')
+        angle = data.get('angle', 90)  # 90, -90, 180
+
+        if not image_name:
+            return jsonify({'error': 'Image name is required'}), 400
+
+        if angle not in (90, -90, 180):
+            return jsonify({'error': 'Angle must be 90, -90, or 180'}), 400
+
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
+        if not os.path.exists(image_path):
+            return jsonify({'error': f'Image not found: {image_name}'}), 404
+
+        # 读取图片并旋转
+        with Image.open(image_path) as img:
+            orig_width, orig_height = img.size
+
+            def transform_cw(x, y):
+                return (orig_height - 1 - y, x)
+
+            def transform_ccw(x, y):
+                return (y, orig_width - 1 - x)
+
+            def transform_180(x, y):
+                return (orig_width - 1 - x, orig_height - 1 - y)
+
+            if angle == 90:
+                img_rotated = img.transpose(Image.Transpose.ROTATE_270)
+                transform = transform_cw
+            elif angle == -90:
+                img_rotated = img.transpose(Image.Transpose.ROTATE_90)
+                transform = transform_ccw
+            else:  # 180
+                img_rotated = img.transpose(Image.Transpose.ROTATE_180)
+                transform = transform_180
+
+            # 覆盖保存旋转后的图片
+            img_rotated.save(image_path)
+
+        # 更新标注坐标
+        annotations = {}
+        if os.path.exists(ANNOTATIONS_FILE):
+            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+                annotations = json.load(f)
+
+        if image_name in annotations and annotations[image_name]:
+            rotated_annotations = []
+            for ann in annotations[image_name]:
+                points = ann.get('points', [])
+                if not points:
+                    rotated_annotations.append(ann)
+                    continue
+
+                rotated_points = []
+                for point in points:
+                    if isinstance(point, dict) and 'x' in point and 'y' in point:
+                        nx, ny = transform(point['x'], point['y'])
+                        rotated_points.append({'x': nx, 'y': ny})
+                    elif isinstance(point, (list, tuple)) and len(point) >= 2:
+                        nx, ny = transform(point[0], point[1])
+                        rotated_points.append([nx, ny])
+                    else:
+                        rotated_points.append(point)
+
+                rotated_ann = dict(ann)
+                rotated_ann['points'] = rotated_points
+                rotated_annotations.append(rotated_ann)
+
+            annotations[image_name] = rotated_annotations
+
+            with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(annotations, f, indent=2, ensure_ascii=False)
+
+        return jsonify({
+            'success': True,
+            'message': f'图片已旋转 {angle}°',
+            'image_name': image_name
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to rotate image: {str(e)}'}), 500
+
 
 @app.route('/api/ai-label', methods=['POST'])
 def ai_label():
@@ -2108,7 +2470,7 @@ def export_dataset():
         # 获取所有图片
         images = []
         for filename in os.listdir(app.config['UPLOAD_FOLDER']):
-            if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif')):
                 images.append(filename)
         
         # 根据样本选择参数过滤图片
@@ -2228,72 +2590,91 @@ names: {selected_classes}
                         for ann in image_annotations:
                             # 只导出选中的类别
                             if ann['class'] in selected_classes:
-                                # 转换为YOLO格式: class_id center_x center_y width height (归一化)
-                                # 修改这里，使用全局类别列表中的索引而不是选中类别列表中的索引
+                                # 使用全局类别列表中的索引而不是选中类别列表中的索引
                                 class_id = None
                                 # 从全局类别列表中查找类别ID
                                 for i, cls in enumerate(classes):
                                     if cls['name'] == ann['class']:
                                         class_id = i
                                         break
-                                
+
                                 # 如果在全局类别中找到了该类别，则写入标签文件
                                 if class_id is not None:
+                                    ann_type = ann.get('type', 'polygon')
                                     points = ann.get('points', [])
-                                    
+
+                                    # 跳过线段标注（YOLO 格式不支持）
+                                    if ann_type == 'line':
+                                        continue
+
                                     # 处理不同格式的points数据
+                                    valid_points = []
                                     if isinstance(points, list) and len(points) > 0:
-                                        # 检查points是坐标对的数组还是对象数组
-                                        valid_points = []
                                         if isinstance(points[0], dict):
                                             # 对象数组格式 [{x: ..., y: ...}, ...]
                                             for point in points:
-                                                if 'x' in point and 'y' in point and point['x'] is not None and point['y'] is not None:
+                                                if ('x' in point and 'y' in point
+                                                        and point['x'] is not None
+                                                        and point['y'] is not None):
                                                     valid_points.append([point['x'], point['y']])
                                         else:
                                             # 坐标对数组格式 [[x, y], ...]
                                             for point in points:
-                                                if isinstance(point, (list, tuple)) and len(point) >= 2 and point[0] is not None and point[1] is not None:
+                                                if (isinstance(point, (list, tuple))
+                                                        and len(point) >= 2
+                                                        and point[0] is not None
+                                                        and point[1] is not None):
                                                     valid_points.append([point[0], point[1]])
-                                            
-                                        if len(valid_points) > 0:
-                                            points = np.array(valid_points)
-                                            
-                                            x_min = np.min(points[:, 0])
-                                            y_min = np.min(points[:, 1])
-                                            x_max = np.max(points[:, 0])
-                                            y_max = np.max(points[:, 1])
-                                            
-                                            # 确保坐标值有效
-                                            if x_min is not None and y_min is not None and x_max is not None and y_max is not None:
-                                                # 转换为YOLO格式
-                                                center_x = ((x_min + x_max) / 2) / width
-                                                center_y = ((y_min + y_max) / 2) / height
-                                                bbox_width = (x_max - x_min) / width
-                                                bbox_height = (y_max - y_min) / height
-                                                
-                                                f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {bbox_width:.6f} {bbox_height:.6f}\n")
+
+                                    if len(valid_points) >= 3 and ann_type == 'polygon':
+                                        # 多边形标注：导出为 YOLO 分割格式 class_id x1 y1 x2 y2 ...
+                                        coords_str = ' '.join(
+                                            f"{(x / width):.6f} {(y / height):.6f}"
+                                            for x, y in valid_points
+                                        )
+                                        f.write(f"{class_id} {coords_str}\n")
+                                    elif len(valid_points) > 0:
+                                        # 矩形或其他标注：导出为 YOLO 边界框格式 class_id cx cy w h
+                                        points_arr = np.array(valid_points)
+                                        x_min = np.min(points_arr[:, 0])
+                                        y_min = np.min(points_arr[:, 1])
+                                        x_max = np.max(points_arr[:, 0])
+                                        y_max = np.max(points_arr[:, 1])
+
+                                        if (x_min is not None and y_min is not None
+                                                and x_max is not None and y_max is not None):
+                                            center_x = ((x_min + x_max) / 2) / width
+                                            center_y = ((y_min + y_max) / 2) / height
+                                            bbox_width = (x_max - x_min) / width
+                                            bbox_height = (y_max - y_min) / height
+                                            f.write(
+                                                f"{class_id} {center_x:.6f} "
+                                                f"{center_y:.6f} {bbox_width:.6f} "
+                                                f"{bbox_height:.6f}\n"
+                                            )
                                     elif 'x' in ann and 'y' in ann and 'width' in ann and 'height' in ann:
                                         # 处理矩形格式的标注数据
                                         x = ann['x']
                                         y = ann['y']
                                         w = ann['width']
                                         h = ann['height']
-                                        
-                                        # 确保所有值都是有效的数字
+
                                         if x is not None and y is not None and w is not None and h is not None:
                                             x_min = x
                                             y_min = y
                                             x_max = x + w
                                             y_max = y + h
-                                            
-                                            # 转换为YOLO格式
+
                                             center_x = ((x_min + x_max) / 2) / width
                                             center_y = ((y_min + y_max) / 2) / height
                                             bbox_width = (x_max - x_min) / width
                                             bbox_height = (y_max - y_min) / height
-                                            
-                                            f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {bbox_width:.6f} {bbox_height:.6f}\n")
+
+                                            f.write(
+                                                f"{class_id} {center_x:.6f} "
+                                                f"{center_y:.6f} {bbox_width:.6f} "
+                                                f"{bbox_height:.6f}\n"
+                                            )
                                     else:
                                         # points数据格式无效，跳过该标注
                                         print(f"Invalid points data for annotation: {ann}")

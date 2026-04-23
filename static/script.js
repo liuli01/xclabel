@@ -14,7 +14,17 @@ let resizeHandle = null; // 当前调整大小的控制点
 let lastMousePos = null; // 上次鼠标位置
 let polygonPoints = []; // 多边形绘制时的顶点数组
 let isPolygonDrawing = false; // 是否正在绘制多边形
+let isPanning = false; // 是否正在平移图片
+let panOffsetX = 0; // 图片水平平移偏移量
+let panOffsetY = 0; // 图片垂直平移偏移量
 let updateAnnotationListDebounced = debounce(updateAnnotationList, 100); // 防抖后的标注列表更新函数
+let undoStack = []; // 撤销栈
+let redoStack = []; // 重做栈
+const MAX_HISTORY = 50; // 最大历史记录数
+let zoomScale = 1.0; // 画布缩放比例
+const MIN_ZOOM = 0.1; // 最小缩放比例
+const MAX_ZOOM = 5.0; // 最大缩放比例
+const ZOOM_STEP = 0.2; // 缩放步长
 
 // 防抖函数
 function debounce(func, wait) {
@@ -27,6 +37,114 @@ function debounce(func, wait) {
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
     };
+}
+
+// 保存当前标注状态到撤销栈
+function pushUndoState() {
+    undoStack.push(JSON.parse(JSON.stringify(currentAnnotations)));
+    if (undoStack.length > MAX_HISTORY) {
+        undoStack.shift();
+    }
+    redoStack = []; // 新操作后清空重做栈
+    updateUndoRedoButtons();
+}
+
+// 撤销上一个操作
+function undo() {
+    if (undoStack.length === 0) {
+        showToast('没有可撤销的操作');
+        return;
+    }
+    // 保存当前状态到重做栈
+    redoStack.push(JSON.parse(JSON.stringify(currentAnnotations)));
+    if (redoStack.length > MAX_HISTORY) {
+        redoStack.shift();
+    }
+    // 恢复上一个状态
+    currentAnnotations = undoStack.pop();
+    selectedAnnotationId = null;
+    isPolygonDrawing = false;
+    polygonPoints = [];
+    updateAnnotationListDebounced();
+    redrawCanvas();
+    saveAnnotations();
+    updateUndoRedoButtons();
+    showToast('已撤销');
+}
+
+// 重做上一个撤销的操作
+function redo() {
+    if (redoStack.length === 0) {
+        showToast('没有可重做的操作');
+        return;
+    }
+    // 保存当前状态到撤销栈
+    undoStack.push(JSON.parse(JSON.stringify(currentAnnotations)));
+    if (undoStack.length > MAX_HISTORY) {
+        undoStack.shift();
+    }
+    // 恢复重做栈中的状态
+    currentAnnotations = redoStack.pop();
+    selectedAnnotationId = null;
+    isPolygonDrawing = false;
+    polygonPoints = [];
+    updateAnnotationListDebounced();
+    redrawCanvas();
+    saveAnnotations();
+    updateUndoRedoButtons();
+    showToast('已重做');
+}
+
+// 更新撤销/重做按钮状态
+function updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+    if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+}
+
+// 清空撤销/重做历史
+function clearHistory() {
+    undoStack = [];
+    redoStack = [];
+    updateUndoRedoButtons();
+}
+
+// 计算图片在画布上的变换参数
+function getImageTransform(container, img) {
+    const maxWidth = container.clientWidth - 20;
+    const maxHeight = container.clientHeight - 20;
+    const ratio = Math.min(maxWidth / img.width, maxHeight / img.height);
+    const displayRatio = ratio * zoomScale;
+    const scaledWidth = img.width * displayRatio;
+    const scaledHeight = img.height * displayRatio;
+    const imgX = (container.clientWidth - scaledWidth) / 2 + panOffsetX;
+    const imgY = (container.clientHeight - scaledHeight) / 2 + panOffsetY;
+    return { ratio, displayRatio, imgX, imgY, scaledWidth, scaledHeight };
+}
+
+// 放大
+function zoomIn() {
+    if (zoomScale < MAX_ZOOM) {
+        zoomScale = Math.min(zoomScale + ZOOM_STEP, MAX_ZOOM);
+        redrawCanvas();
+    }
+}
+
+// 缩小
+function zoomOut() {
+    if (zoomScale > MIN_ZOOM) {
+        zoomScale = Math.max(zoomScale - ZOOM_STEP, MIN_ZOOM);
+        redrawCanvas();
+    }
+}
+
+// 复原缩放
+function zoomReset() {
+    zoomScale = 1.0;
+    panOffsetX = 0;
+    panOffsetY = 0;
+    redrawCanvas();
 }
 
 // DOM加载完成后初始化
@@ -62,7 +180,41 @@ function setupEventListeners() {
     document.getElementById('rectTool').addEventListener('click', () => switchTool('rect'));
     document.getElementById('polygonTool').addEventListener('click', () => switchTool('polygon'));
     document.getElementById('moveTool').addEventListener('click', () => switchTool('move'));
-    
+
+    // 旋转按钮
+    const rotateLeftBtn = document.getElementById('rotateLeftBtn');
+    const rotateRightBtn = document.getElementById('rotateRightBtn');
+    if (rotateLeftBtn) {
+        rotateLeftBtn.addEventListener('click', () => rotateCurrentImage(-90));
+    }
+    if (rotateRightBtn) {
+        rotateRightBtn.addEventListener('click', () => rotateCurrentImage(90));
+    }
+
+    // 缩放按钮
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const zoomResetBtn = document.getElementById('zoomResetBtn');
+    if (zoomInBtn) {
+        zoomInBtn.addEventListener('click', zoomIn);
+    }
+    if (zoomOutBtn) {
+        zoomOutBtn.addEventListener('click', zoomOut);
+    }
+    if (zoomResetBtn) {
+        zoomResetBtn.addEventListener('click', zoomReset);
+    }
+
+    // 撤销/重做按钮
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) {
+        undoBtn.addEventListener('click', undo);
+    }
+    if (redoBtn) {
+        redoBtn.addEventListener('click', redo);
+    }
+
     // 类别管理
     document.getElementById('addClassBtn').addEventListener('click', addClass);
     document.getElementById('newClassInput').addEventListener('keypress', function(e) {
@@ -133,8 +285,12 @@ function switchTool(tool) {
     
     // 更新鼠标样式
     const canvas = document.getElementById('imageCanvas');
-    canvas.style.cursor = 'crosshair';
-    
+    if (tool === 'move') {
+        canvas.style.cursor = 'grab';
+    } else {
+        canvas.style.cursor = 'crosshair';
+    }
+
     redrawCanvas();
 }
 
@@ -148,28 +304,23 @@ function handleMouseDown(e) {
     // 获取图片的实际尺寸和位置
     const img = imageCache.get(currentImage);
     if (!img) return;
-    
-    // 计算图片在画布上的显示尺寸和位置（自适应居中）
+
+    // 计算图片在画布上的显示尺寸和位置（自适应居中+缩放）
     const container = document.getElementById('imageCanvasContainer');
-    const maxWidth = container.clientWidth - 20;
-    const maxHeight = container.clientHeight - 20;
-    const ratio = Math.min(maxWidth / img.width, maxHeight / img.height);
-    const scaledWidth = img.width * ratio;
-    const scaledHeight = img.height * ratio;
-    const imgX = (container.clientWidth - scaledWidth) / 2;
-    const imgY = (container.clientHeight - scaledHeight) / 2;
-    
+    const { displayRatio, imgX, imgY } = getImageTransform(container, img);
+
     // 计算鼠标在画布上的坐标
     const canvasX = e.clientX - rect.left;
     const canvasY = e.clientY - rect.top;
-    
+
     // 计算鼠标在图片上的实际坐标
-    const x = (canvasX - imgX) / ratio;
-    const y = (canvasY - imgY) / ratio;
-    
+    const x = (canvasX - imgX) / displayRatio;
+    const y = (canvasY - imgY) / displayRatio;
+
     // 检查是否点击了某个标注的控制点
-    const resizeResult = checkResizeHandleClick(canvasX, canvasY, ratio, imgX, imgY);
+    const resizeResult = checkResizeHandleClick(canvasX, canvasY, displayRatio, imgX, imgY);
     if (resizeResult) {
+        pushUndoState();
         isResizing = true;
         resizeHandle = resizeResult.handle;
         selectedAnnotationId = resizeResult.annotationId;
@@ -178,10 +329,11 @@ function handleMouseDown(e) {
         redrawCanvas();
         return;
     }
-    
+
     // 检查是否点击了某个标注
-    const annotationResult = checkAnnotationClick(canvasX, canvasY, ratio, imgX, imgY);
+    const annotationResult = checkAnnotationClick(canvasX, canvasY, displayRatio, imgX, imgY);
     if (annotationResult) {
+        pushUndoState();
         selectedAnnotationId = annotationResult.id;
         isMoving = true;
         lastMousePos = {x: e.clientX, y: e.clientY};
@@ -190,10 +342,20 @@ function handleMouseDown(e) {
         return;
     }
     
-    // 如果点击了空白区域，取消选择
+    // 如果点击了空白区域
     selectedAnnotationId = null;
     updateAnnotationListDebounced();
     redrawCanvas();
+
+    // 移动工具点击空白区域时开始平移图片
+    if (currentTool === 'move') {
+        isPanning = true;
+        lastMousePos = {x: e.clientX, y: e.clientY};
+        const canvas = document.getElementById('imageCanvas');
+        canvas.style.cursor = 'grabbing';
+        return;
+    }
+
     // 处理多边形绘制
     if (currentTool === 'polygon') {
         // 如果还没有开始绘制多边形，初始化
@@ -289,51 +451,56 @@ function handleMouseMove(e) {
     // 获取图片的实际尺寸和位置
     const img = imageCache.get(currentImage);
     if (!img) return;
-    
-    // 计算图片在画布上的显示尺寸和位置（自适应居中）
+
+    // 计算图片在画布上的显示尺寸和位置（自适应居中+缩放）
     const container = document.getElementById('imageCanvasContainer');
-    const maxWidth = container.clientWidth - 20;
-    const maxHeight = container.clientHeight - 20;
-    const ratio = Math.min(maxWidth / img.width, maxHeight / img.height);
-    const scaledWidth = img.width * ratio;
-    const scaledHeight = img.height * ratio;
-    const imgX = (container.clientWidth - scaledWidth) / 2;
-    const imgY = (container.clientHeight - scaledHeight) / 2;
-    
+    const { displayRatio, imgX, imgY } = getImageTransform(container, img);
+
     // 计算鼠标在画布上的坐标
     const canvasX = e.clientX - rect.left;
     const canvasY = e.clientY - rect.top;
-    
+
     // 计算鼠标在图片上的实际坐标
-    const x = (canvasX - imgX) / ratio;
-    const y = (canvasY - imgY) / ratio;
-    
+    const x = (canvasX - imgX) / displayRatio;
+    const y = (canvasY - imgY) / displayRatio;
+
     // 处理调整大小
     if (isResizing && selectedAnnotationId && resizeHandle) {
         if (!lastMousePos) return;
-        
-        const dx = (e.clientX - lastMousePos.x) / ratio;
-        const dy = (e.clientY - lastMousePos.y) / ratio;
-        
+
+        const dx = (e.clientX - lastMousePos.x) / displayRatio;
+        const dy = (e.clientY - lastMousePos.y) / displayRatio;
+
         resizeAnnotation(selectedAnnotationId, resizeHandle, dx, dy);
         lastMousePos = {x: e.clientX, y: e.clientY};
         redrawCanvas();
         return;
     }
-    
+
     // 处理移动标注
     if (isMoving && selectedAnnotationId) {
         if (!lastMousePos) return;
-        
-        const dx = (e.clientX - lastMousePos.x) / ratio;
-        const dy = (e.clientY - lastMousePos.y) / ratio;
-        
+
+        const dx = (e.clientX - lastMousePos.x) / displayRatio;
+        const dy = (e.clientY - lastMousePos.y) / displayRatio;
+
         moveAnnotation(selectedAnnotationId, dx, dy);
         lastMousePos = {x: e.clientX, y: e.clientY};
         redrawCanvas();
         return;
     }
-    
+
+    // 处理平移图片
+    if (isPanning) {
+        if (!lastMousePos) return;
+
+        panOffsetX += e.clientX - lastMousePos.x;
+        panOffsetY += e.clientY - lastMousePos.y;
+        lastMousePos = {x: e.clientX, y: e.clientY};
+        redrawCanvas();
+        return;
+    }
+
     // 处理多边形绘制过程中的鼠标移动
     if (isPolygonDrawing) {
         // 更新当前鼠标位置，用于绘制从最后一个顶点到当前鼠标位置的连线
@@ -442,7 +609,15 @@ function handleMouseUp(e) {
         saveAnnotations();
         return;
     }
-    
+
+    // 结束平移图片
+    if (isPanning) {
+        isPanning = false;
+        const canvas = document.getElementById('imageCanvas');
+        canvas.style.cursor = 'grab';
+        return;
+    }
+
     // 处理矩形绘制完成
     if (isDrawing && startPoint && currentPoint && currentTool === 'rect') {
         // 矩形工具 - 创建矩形标注
@@ -454,6 +629,7 @@ function handleMouseUp(e) {
         if (width > 5 && height > 5) { // 避免误触创建太小的矩形
             const selectedClass = getSelectedClass();
             if (selectedClass) {
+                pushUndoState();
                 const annotation = {
                     id: Date.now(),
                     class: selectedClass.name,
@@ -484,16 +660,17 @@ function handleDoubleClick(e) {
     // 完成多边形绘制
     const selectedClass = getSelectedClass();
     if (selectedClass) {
+        pushUndoState();
         // 将多边形顶点转换为所需格式
         const points = polygonPoints.map(point => [point.x, point.y]);
-        
+
         const annotation = {
             id: Date.now(),
             class: selectedClass.name,
             points: points,
             type: 'polygon'
         };
-        
+
         currentAnnotations.push(annotation);
         saveAnnotations();
         updateAnnotationListDebounced();
@@ -515,13 +692,20 @@ function handleMouseLeave() {
         currentPoint = null;
         redrawCanvas();
     }
-    
+
     // 如果正在绘制多边形，重置绘制状态
     if (isPolygonDrawing) {
         isPolygonDrawing = false;
         polygonPoints = [];
         currentPoint = null;
         redrawCanvas();
+    }
+
+    // 如果正在平移图片，停止平移
+    if (isPanning) {
+        isPanning = false;
+        const canvas = document.getElementById('imageCanvas');
+        canvas.style.cursor = 'grab';
     }
 }
 
@@ -564,93 +748,87 @@ function redrawCanvas() {
 }
 
 function drawImageAndAnnotations(ctx, img, container) {
-    // 计算图片在画布上的显示尺寸和位置（自适应居中）
-    const maxWidth = container.clientWidth - 20;
-    const maxHeight = container.clientHeight - 20;
-    const ratio = Math.min(maxWidth / img.width, maxHeight / img.height);
-    const scaledWidth = img.width * ratio;
-    const scaledHeight = img.height * ratio;
-    const imgX = (container.clientWidth - scaledWidth) / 2;
-    const imgY = (container.clientHeight - scaledHeight) / 2;
-    
+    // 计算图片在画布上的显示尺寸和位置（自适应居中+缩放）
+    const { displayRatio, imgX, imgY, scaledWidth, scaledHeight } = getImageTransform(container, img);
+
     // 绘制图片
     ctx.drawImage(img, imgX, imgY, scaledWidth, scaledHeight);
-    
+
     // 绘制所有标注
     currentAnnotations.forEach(annotation => {
-        drawAnnotation(ctx, annotation, ratio, ratio, imgX, imgY);
+        drawAnnotation(ctx, annotation, displayRatio, displayRatio, imgX, imgY);
     });
-    
+
     // 绘制当前正在绘制的形状
     if (isDrawing && startPoint && currentPoint && currentTool === 'rect') {
         // 设置绘制样式为实线
         ctx.strokeStyle = '#ff0000';
         ctx.lineWidth = 2;
         ctx.setLineDash([]); // 使用实线而不是虚线
-        
+
         // 计算实际绘制的矩形坐标（考虑缩放和偏移）
-        const rectX = startPoint.x * ratio + imgX;
-        const rectY = startPoint.y * ratio + imgY;
-        const rectWidth = (currentPoint.x - startPoint.x) * ratio;
-        const rectHeight = (currentPoint.y - startPoint.y) * ratio;
-        
+        const rectX = startPoint.x * displayRatio + imgX;
+        const rectY = startPoint.y * displayRatio + imgY;
+        const rectWidth = (currentPoint.x - startPoint.x) * displayRatio;
+        const rectHeight = (currentPoint.y - startPoint.y) * displayRatio;
+
         ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
-        
+
         // 绘制控制点
-        drawControlPoints(ctx, 
-            {x: startPoint.x * ratio + imgX, y: startPoint.y * ratio + imgY}, 
-            {x: currentPoint.x * ratio + imgX, y: currentPoint.y * ratio + imgY}
+        drawControlPoints(ctx,
+            {x: startPoint.x * displayRatio + imgX, y: startPoint.y * displayRatio + imgY},
+            {x: currentPoint.x * displayRatio + imgX, y: currentPoint.y * displayRatio + imgY}
         );
     }
-    
+
     // 绘制多边形
     if (isPolygonDrawing && polygonPoints.length > 0) {
         ctx.save();
         ctx.strokeStyle = '#ff0000';
         ctx.lineWidth = 2;
         ctx.setLineDash([]);
-        
+
         // 1. 绘制连线（从第一个点到当前鼠标位置）
         ctx.beginPath();
-        
+
         // 绘制已添加的顶点之间的连线
         for (let i = 0; i < polygonPoints.length; i++) {
             const point = polygonPoints[i];
-            const canvasX = point.x * ratio + imgX;
-            const canvasY = point.y * ratio + imgY;
-            
+            const canvasX = point.x * displayRatio + imgX;
+            const canvasY = point.y * displayRatio + imgY;
+
             if (i === 0) {
                 ctx.moveTo(canvasX, canvasY);
             } else {
                 ctx.lineTo(canvasX, canvasY);
             }
         }
-        
+
         // 绘制从最后一个点到当前鼠标位置的连线
         if (currentPoint && polygonPoints.length > 0) {
             const lastPoint = polygonPoints[polygonPoints.length - 1];
-            const lastCanvasX = lastPoint.x * ratio + imgX;
-            const lastCanvasY = lastPoint.y * ratio + imgY;
-            const currentCanvasX = currentPoint.x * ratio + imgX;
-            const currentCanvasY = currentPoint.y * ratio + imgY;
-            
+            const lastCanvasX = lastPoint.x * displayRatio + imgX;
+            const lastCanvasY = lastPoint.y * displayRatio + imgY;
+            const currentCanvasX = currentPoint.x * displayRatio + imgX;
+            const currentCanvasY = currentPoint.y * displayRatio + imgY;
+
             ctx.moveTo(lastCanvasX, lastCanvasY);
             ctx.lineTo(currentCanvasX, currentCanvasY);
         }
-        
+
         ctx.stroke();
-        
+
         // 2. 绘制已添加的顶点
         ctx.fillStyle = '#ff0000';
         for (const point of polygonPoints) {
-            const canvasX = point.x * ratio + imgX;
-            const canvasY = point.y * ratio + imgY;
-            
+            const canvasX = point.x * displayRatio + imgX;
+            const canvasY = point.y * displayRatio + imgY;
+
             ctx.beginPath();
             ctx.arc(canvasX, canvasY, 4, 0, Math.PI * 2);
             ctx.fill();
         }
-        
+
         ctx.restore();
     }
 }
@@ -1011,6 +1189,55 @@ function updateImageCount(count) {
     document.getElementById('imageCount').textContent = `共 ${count} 张图片`;
 }
 
+// 旋转当前图片
+function rotateCurrentImage(angle) {
+    if (!currentImage) {
+        showToast('请先选择一张图片');
+        return;
+    }
+
+    fetch('/api/rotate-image', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            image_name: currentImage,
+            angle: angle
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showToast(`旋转失败: ${data.error}`);
+            return;
+        }
+
+        // 清除图片缓存，强制重新加载（绕过浏览器缓存）
+        imageCache.delete(currentImage);
+
+        // 使用带时间戳的 URL 重新加载图片，避免浏览器缓存
+        const img = new Image();
+        img.onload = function() {
+            imageCache.set(currentImage, img);
+            zoomScale = 1.0; // 旋转后重置缩放
+            panOffsetX = 0; // 旋转后重置平移
+            panOffsetY = 0;
+            redrawCanvas();
+            loadAnnotations(currentImage);
+            showToast(`图片已旋转 ${angle}°`);
+        };
+        img.onerror = function() {
+            showToast('图片重新加载失败');
+        };
+        img.src = `/api/image/${currentImage}?t=${Date.now()}`;
+    })
+    .catch(error => {
+        console.error('旋转失败:', error);
+        showToast('旋转失败，请重试');
+    });
+}
+
 // 筛选图片
 function filterImages() {
     const searchTerm = document.getElementById('imageSearch').value.toLowerCase();
@@ -1031,13 +1258,16 @@ function selectImage(imageName, skipLoadAnnotations = false) {
     });
     
     currentImage = imageName;
-    
+    zoomScale = 1.0; // 切换图片时重置缩放
+    panOffsetX = 0; // 切换图片时重置平移
+    panOffsetY = 0;
+
     // 隐藏无图片提示
     document.getElementById('noImageMessage').style.display = 'none';
-    
+
     // 显示画布容器
     document.getElementById('imageCanvasContainer').style.display = 'block';
-    
+
     // 加载标注，除非跳过
     if (!skipLoadAnnotations) {
         loadAnnotations(imageName);
@@ -1050,12 +1280,14 @@ function loadAnnotations(imageName) {
         .then(response => response.json())
         .then(data => {
             currentAnnotations = data || [];
+            clearHistory();
             updateAnnotationListDebounced();
             redrawCanvas();
         })
         .catch(error => {
             console.error('加载标注失败:', error);
             currentAnnotations = [];
+            clearHistory();
             updateAnnotationListDebounced();
             redrawCanvas();
         });
@@ -1112,6 +1344,7 @@ function getClassColor(className) {
 // 删除标注
 function deleteAnnotation(index) {
     if (confirm('确定要删除这个标注吗？')) {
+        pushUndoState();
         const annotation = currentAnnotations[index];
         // 如果删除的是当前选中的标注，重置选中状态
         if (annotation.id === selectedAnnotationId) {
@@ -1130,7 +1363,8 @@ function clearCurrentAnnotations() {
         showToast('当前没有标注可清除');
         return;
     }
-    
+
+    pushUndoState();
     currentAnnotations = [];
     selectedAnnotationId = null; // 重置选中状态
     updateAnnotationListDebounced();
@@ -1943,16 +2177,31 @@ function parseShortcut(shortcutStr) {
 
 // 处理键盘快捷键
 function handleKeyDown(e) {
+    // 撤销 (Ctrl+Z)
+    if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
+        return;
+    }
+
+    // 重做 (Ctrl+Y 或 Ctrl+Shift+Z)
+    if ((e.ctrlKey && e.key.toLowerCase() === 'y') ||
+        (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z')) {
+        e.preventDefault();
+        redo();
+        return;
+    }
+
     // 保存
     const saveShortcut = parseShortcut(shortcutSettings.saveShortcut);
-    if (e.ctrlKey === saveShortcut.ctrlKey && 
-        e.shiftKey === saveShortcut.shiftKey && 
-        e.altKey === saveShortcut.altKey && 
+    if (e.ctrlKey === saveShortcut.ctrlKey &&
+        e.shiftKey === saveShortcut.shiftKey &&
+        e.altKey === saveShortcut.altKey &&
         e.key.toLowerCase() === saveShortcut.key.toLowerCase()) {
         e.preventDefault();
         saveAnnotations();
     }
-    
+
     // 清除标注
     const clearShortcut = parseShortcut(shortcutSettings.clearShortcut);
     if (e.ctrlKey === clearShortcut.ctrlKey && 
@@ -2332,20 +2581,101 @@ function setupDatasetUploadEvents() {
         });
     }
     
+    // Roboflow数据集上传
+    const selectRoboflowBtn = document.getElementById('selectRoboflowBtn');
+    const roboflowInput = document.getElementById('roboflowInput');
+    const uploadRoboflowBtn = document.getElementById('uploadRoboflowBtn');
+    if (selectRoboflowBtn && roboflowInput && uploadRoboflowBtn) {
+        selectRoboflowBtn.addEventListener('click', function() {
+            roboflowInput.click();
+        });
+
+        roboflowInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                // 显示选中的文件信息
+                const selectedInfo = document.getElementById('selectedRoboflowInfo');
+                const selectedName = document.getElementById('selectedRoboflowName');
+                selectedName.textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+                selectedInfo.style.display = 'block';
+
+                // 启用上传按钮
+                uploadRoboflowBtn.disabled = false;
+            }
+        });
+
+        // 上传Roboflow数据集按钮事件
+        uploadRoboflowBtn.addEventListener('click', function() {
+            const file = roboflowInput.files[0];
+            if (!file) {
+                showToast('请先选择Roboflow数据集ZIP文件');
+                return;
+            }
+
+            // 显示上传中状态
+            uploadRoboflowBtn.disabled = true;
+            uploadRoboflowBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 上传中...';
+
+            // 创建FormData对象
+            const formData = new FormData();
+            formData.append('file', file, file.name);
+
+            // 发送文件上传请求
+            fetch('/api/upload/roboflow', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 重置按钮状态
+                uploadRoboflowBtn.innerHTML = '<i class="fas fa-upload"></i> 上传Roboflow数据集';
+                uploadRoboflowBtn.disabled = false;
+
+                if (data.error) {
+                    showToast(`上传失败: ${data.error}`);
+                    return;
+                }
+
+                // 显示成功提示
+                const msg = data.warnings && data.warnings.length > 0
+                    ? `成功导入 ${data.images_imported || 0} 张图片，警告: ${data.warnings.join('; ')}`
+                    : `成功导入 ${data.images_imported || 0} 张图片，${data.annotations_imported || 0} 个标注`;
+                showToast(msg);
+
+                // 关闭模态框
+                document.getElementById('datasetModal').style.display = 'none';
+
+                // 重新加载图片列表和类别列表
+                loadImages();
+                loadClasses();
+            })
+            .catch(error => {
+                console.error('上传失败:', error);
+
+                // 重置按钮状态
+                uploadRoboflowBtn.innerHTML = '<i class="fas fa-upload"></i> 上传Roboflow数据集';
+                uploadRoboflowBtn.disabled = false;
+
+                // 显示错误提示
+                showToast('上传失败，请重试');
+            });
+        });
+    }
+
     // 标签页切换事件
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach(btn => {
         btn.addEventListener('click', function() {
             // 移除所有标签页的active状态
             tabBtns.forEach(b => b.classList.remove('active'));
-            
+
             // 添加当前标签页的active状态
             this.classList.add('active');
-            
+
             // 隐藏所有内容面板
             const tabContents = document.querySelectorAll('.tab-pane');
             tabContents.forEach(content => content.classList.remove('active'));
-            
+
             // 显示对应内容面板
             const tabId = this.getAttribute('data-tab');
             const targetTab = document.getElementById(`${tabId}-tab`);

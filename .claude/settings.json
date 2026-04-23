@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python -c \"import psutil; print\\('psutil version:', psutil.__version__\\)\")",
+      "Bash(.venv/Scripts/python -c \"import flask; import cv2; import numpy; import PIL; import psutil; import requests; print\\('All core imports OK'\\)\")",
+      "Bash(docker --version)",
+      "Bash(docker build *)"
+    ]
+  }
+}

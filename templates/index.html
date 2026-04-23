@@ -18,7 +18,13 @@
                 <button id="openFolderBtn" class="btn btn-primary">
                     <i class="fas fa-upload"></i> 添加数据集
                 </button>
-                                <button id="clearAnnotationBtn" class="btn btn-danger">
+                                <button id="undoBtn" class="btn btn-secondary" disabled>
+                    <i class="fas fa-undo"></i> 撤销
+                </button>
+                <button id="redoBtn" class="btn btn-secondary" disabled>
+                    <i class="fas fa-redo"></i> 重做
+                </button>
+                <button id="clearAnnotationBtn" class="btn btn-danger">
                     <i class="fas fa-trash"></i> 清除
                 </button>
                 <button id="saveAnnotationBtn" class="btn btn-success">
@@ -91,6 +97,23 @@
                         </button>
                         <button id="moveTool" class="tool-btn" title="移动工具">
                             <i class="fas fa-arrows-alt"></i>
+                        </button>
+                        <div class="tool-separator"></div>
+                        <button id="rotateLeftBtn" class="tool-btn" title="向左旋转90°">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                        <button id="rotateRightBtn" class="tool-btn" title="向右旋转90°">
+                            <i class="fas fa-redo"></i>
+                        </button>
+                        <div class="tool-separator"></div>
+                        <button id="zoomInBtn" class="tool-btn" title="放大">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button id="zoomOutBtn" class="tool-btn" title="缩小">
+                            <i class="fas fa-search-minus"></i>
+                        </button>
+                        <button id="zoomResetBtn" class="tool-btn" title="复原">
+                            <i class="fas fa-compress-arrows-alt"></i>
                         </button>
                     </div>
                 </div>
@@ -369,6 +392,7 @@
                 <button class="tab-btn active" data-tab="image">图片文件夹</button>
                 <button class="tab-btn" data-tab="video">视频文件</button>
                 <button class="tab-btn" data-tab="labelme">labelme数据集</button>
+                <button class="tab-btn" data-tab="roboflow">Roboflow数据集</button>
             </div>
             <div class="tab-content">
                 <!-- 图片文件夹上传 -->
@@ -421,6 +445,26 @@
                     <div class="upload-actions" style="margin-top: 15px; text-align: center;">
                         <button id="uploadLabelMeBtn" class="btn btn-success" disabled>
                             <i class="fas fa-upload"></i> 上传labelme数据集
+                        </button>
+                    </div>
+                </div>
+                <!-- Roboflow数据集上传 -->
+                <div class="tab-pane" id="roboflow-tab">
+                    <div class="upload-area" id="roboflowUploadArea">
+                        <i class="fas fa-file-archive fa-3x"></i>
+                        <p>拖拽Roboflow数据集ZIP文件到此处或点击选择</p>
+                        <input type="file" id="roboflowInput" accept=".zip" style="display: none;">
+                        <button id="selectRoboflowBtn" class="btn btn-primary">选择Roboflow数据集</button>
+                        <div id="selectedRoboflowInfo" style="margin-top: 10px; font-size: 0.9em; color: #666; display: none;">
+                            <strong>已选择:</strong> <span id="selectedRoboflowName"></span>
+                        </div>
+                        <div class="info-text">
+                            <p><strong>说明：</strong>请上传从Roboflow导出的YOLO格式ZIP文件（如：river_color.v4i.yolov8.zip）</p>
+                        </div>
+                    </div>
+                    <div class="upload-actions" style="margin-top: 15px; text-align: center;">
+                        <button id="uploadRoboflowBtn" class="btn btn-success" disabled>
+                            <i class="fas fa-upload"></i> 上传Roboflow数据集
                         </button>
                     </div>
                 </div>

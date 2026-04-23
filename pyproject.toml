@@ -1,0 +1,64 @@
+[project]
+name = "xclabel"
+version = "2.7.0"
+description = "开源图像标注工具，支持矩形、多边形等多种标注类型，集成AI自动标注功能"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "北小菜", email = ""},
+]
+keywords = ["image-labeling", "annotation", "flask", "yolo", "ai-labeling"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+dependencies = [
+    "flask==3.1.2",
+    "flask-cors==6.0.1",
+    "opencv-python>=4.10.0",
+    "pillow>=10.4.0",
+    "numpy>=2.1.0",
+    "psutil>=6.0.0",
+    "requests>=2.28.2",
+    "flask-socketio>=5.6.0",
+    "python-socketio>=5.16.0",
+    "python-engineio>=4.13.0",
+    "simple-websocket>=1.1.0",
+    "openai>=1.40.0",
+    "pyinstaller>=6.11.1",
+    "gunicorn>=25.3.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+xclabel = "app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

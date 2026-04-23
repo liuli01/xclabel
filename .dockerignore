@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# IDE
+.vscode
+.idea
+.vs
+
+# Build
+dist
+build
+*.spec
+
+# Runtime data (will be mounted as volumes)
+uploads
+plugins
+static/annotations
+
+# Tests
+tests
+
+# Docs
+CHANGELOG.md
+LICENSE
+README.md
