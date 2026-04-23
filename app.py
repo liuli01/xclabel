@@ -14,7 +14,7 @@ import time
 import zipfile
 import shutil
 from urllib.parse import urlparse
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from PIL import Image
@@ -22,6 +22,7 @@ from AiUtils import AIAutoLabeler
 
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 CORS(app)
 
 # 应用版本号
@@ -277,44 +278,116 @@ class VideoAnnotationTask:
 
 # 配置
 import os
+import re
 
 # 使用当前工作目录作为基础目录
 BASE_PATH = os.getcwd()
-UPLOAD_FOLDER = os.path.join(BASE_PATH, 'uploads')
 STATIC_FOLDER = os.path.join(BASE_PATH, 'static')
-ANNOTATIONS_FOLDER = os.path.join(UPLOAD_FOLDER, 'annotations')
+PROJECTS_FOLDER = os.path.join(BASE_PATH, 'projects')
+LEGACY_UPLOAD_FOLDER = os.path.join(BASE_PATH, 'uploads')
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['STATIC_FOLDER'] = STATIC_FOLDER
-app.config['ANNOTATIONS_FOLDER'] = ANNOTATIONS_FOLDER
 
-# 创建必要的目录
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(STATIC_FOLDER, exist_ok=True)
-os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
+# 工程相关辅助函数
 
-# 模拟数据库存储标注信息
-ANNOTATIONS_FILE = os.path.join(ANNOTATIONS_FOLDER, 'annotations.json')
-CLASSES_FILE = os.path.join(ANNOTATIONS_FOLDER, 'classes.json')
+def sanitize_project_name(name):
+    """清理工程名称，移除非法字符。"""
+    name = name.strip()
+    name = re.sub(r'[\\\\/:*?"<>|]', '', name)
+    return name
 
-# 初始化注释文件
-if not os.path.exists(ANNOTATIONS_FILE):
-    with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
-        json.dump({}, f)
-        
-# 初始化类别文件
-if not os.path.exists(CLASSES_FILE):
-    # 默认类别
-    default_classes = [
-        {'name': 'person', 'color': '#3aa757'}
-    ]
-    with open(CLASSES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(default_classes, f)
+def get_current_project():
+    """获取当前工程名，默认为 'default'。"""
+    return session.get('current_project', 'default')
+
+def set_current_project(name):
+    """设置当前工程名。"""
+    session['current_project'] = name
+
+def get_project_path(project_name):
+    """获取指定工程的完整目录路径。"""
+    return os.path.join(PROJECTS_FOLDER, project_name)
+
+def get_upload_folder():
+    """获取当前工程的上传目录路径。"""
+    return get_project_path(get_current_project())
+
+def get_annotations_folder():
+    """获取当前工程的标注目录路径。"""
+    return os.path.join(get_upload_folder(), 'annotations')
+
+def get_annotations_file():
+    """获取当前工程的标注文件路径。"""
+    return os.path.join(get_annotations_folder(), 'annotations.json')
+
+def get_classes_file():
+    """获取当前工程的类别文件路径。"""
+    return os.path.join(get_annotations_folder(), 'classes.json')
+
+def ensure_default_project():
+    """确保默认工程存在。首次启动时迁移旧数据。"""
+    os.makedirs(PROJECTS_FOLDER, exist_ok=True)
+    default_project_path = get_project_path('default')
+
+    if not os.path.exists(default_project_path):
+        os.makedirs(default_project_path, exist_ok=True)
+        os.makedirs(os.path.join(default_project_path, 'annotations'), exist_ok=True)
+
+        # 迁移旧数据
+        if os.path.exists(LEGACY_UPLOAD_FOLDER):
+            for item in os.listdir(LEGACY_UPLOAD_FOLDER):
+                src = os.path.join(LEGACY_UPLOAD_FOLDER, item)
+                dst = os.path.join(default_project_path, item)
+                if os.path.exists(dst):
+                    continue
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+
+    # 确保默认工程的标注和类别文件存在
+    ann_file = os.path.join(default_project_path, 'annotations', 'annotations.json')
+    cls_file = os.path.join(default_project_path, 'annotations', 'classes.json')
+    if not os.path.exists(ann_file):
+        with open(ann_file, 'w', encoding='utf-8') as f:
+            json.dump({}, f)
+    if not os.path.exists(cls_file):
+        default_classes = []
+        with open(cls_file, 'w', encoding='utf-8') as f:
+            json.dump(default_classes, f)
+    else:
+        # 如果类别文件存在但解析失败，重置为空列表
+        try:
+            with open(cls_file, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+            if not isinstance(existing, list):
+                with open(cls_file, 'w', encoding='utf-8') as f:
+                    json.dump([], f)
+        except (json.JSONDecodeError, TypeError):
+            with open(cls_file, 'w', encoding='utf-8') as f:
+                json.dump([], f)
+
+def init_project(project_name):
+    """初始化新工程的目录和默认文件。"""
+    project_path = get_project_path(project_name)
+    os.makedirs(project_path, exist_ok=True)
+    os.makedirs(os.path.join(project_path, 'annotations'), exist_ok=True)
+    ann_file = os.path.join(project_path, 'annotations', 'annotations.json')
+    cls_file = os.path.join(project_path, 'annotations', 'classes.json')
+    if not os.path.exists(ann_file):
+        with open(ann_file, 'w', encoding='utf-8') as f:
+            json.dump({}, f)
+    if not os.path.exists(cls_file):
+        with open(cls_file, 'w', encoding='utf-8') as f:
+            json.dump([], f)
+
+# 启动时确保默认工程存在
+ensure_default_project()
 
 
 @app.route('/')
 def index():
-    return render_template('index.html', version=APP_VERSION)
+    return redirect('/projects')
 
 @app.route('/ai-config')
 def ai_config():
@@ -435,8 +508,8 @@ def get_files():
 def get_classes():
     """获取所有类别"""
     classes = []
-    if os.path.exists(CLASSES_FILE):
-        with open(CLASSES_FILE, 'r', encoding='utf-8') as f:
+    if os.path.exists(get_classes_file()):
+        with open(get_classes_file(), 'r', encoding='utf-8') as f:
             classes = json.load(f)
     return jsonify(classes)
 
@@ -446,10 +519,10 @@ def save_classes():
     """保存所有类别"""
     data = request.json
     
-    # 确保ANNOTATIONS_FOLDER目录存在
-    os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
+    # 确保get_annotations_folder()目录存在
+    os.makedirs(get_annotations_folder(), exist_ok=True)
     
-    with open(CLASSES_FILE, 'w', encoding='utf-8') as f:
+    with open(get_classes_file(), 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2)
     
     return jsonify({'message': 'Classes saved successfully'})
@@ -462,9 +535,9 @@ def get_images():
     
     # 读取标注信息，用于获取每张图片的标注数量
     annotations = {}
-    if os.path.exists(ANNOTATIONS_FILE):
+    if os.path.exists(get_annotations_file()):
         try:
-            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+            with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                 annotations = json.load(f)
         except json.JSONDecodeError:
             # 如果JSON文件无效或为空，使用空字典
@@ -475,7 +548,7 @@ def get_images():
             annotations = {}
     
     # 获取所有图片文件，并按照创建时间排序（最新的在最后）
-    upload_folder = app.config['UPLOAD_FOLDER']
+    upload_folder = get_upload_folder()
     image_files = []
     
     for filename in os.listdir(upload_folder):
@@ -527,22 +600,22 @@ def delete_images():
     for image_name in image_names:
         try:
             # 删除图片文件
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
+            image_path = os.path.join(get_upload_folder(), image_name)
             if os.path.exists(image_path):
                 os.remove(image_path)
                 deleted_count += 1
                 
                 # 同时删除对应的标注信息
                 annotations = {}
-                if os.path.exists(ANNOTATIONS_FILE):
-                    with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+                if os.path.exists(get_annotations_file()):
+                    with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                         annotations = json.load(f)
                     
                 if image_name in annotations:
                     del annotations[image_name]
-                    # 确保ANNOTATIONS_FOLDER目录存在
-                    os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
-                    with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+                    # 确保get_annotations_folder()目录存在
+                    os.makedirs(get_annotations_folder(), exist_ok=True)
+                    with open(get_annotations_file(), 'w', encoding='utf-8') as f:
                         json.dump(annotations, f, indent=2)
             else:
                 errors.append(f"图片 '{image_name}' 不存在")
@@ -599,15 +672,15 @@ def delete_files():
             if os.path.splitext(file_path)[1].lower() in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
                 image_name = os.path.basename(file_path)
                 annotations = {}
-                if os.path.exists(ANNOTATIONS_FILE):
-                    with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+                if os.path.exists(get_annotations_file()):
+                    with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                         annotations = json.load(f)
                     
                 if image_name in annotations:
                     del annotations[image_name]
-                    # 确保ANNOTATIONS_FOLDER目录存在
-                    os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
-                    with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+                    # 确保get_annotations_folder()目录存在
+                    os.makedirs(get_annotations_folder(), exist_ok=True)
+                    with open(get_annotations_file(), 'w', encoding='utf-8') as f:
                         json.dump(annotations, f, indent=2)
         except Exception as e:
             errors.append(f"删除文件 '{file_path}' 失败: {str(e)}")
@@ -860,19 +933,19 @@ def download_files():
 @app.route('/api/image/<filename>')
 def get_image(filename):
     """获取指定图片"""
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    return send_from_directory(get_upload_folder(), filename)
 
 @app.route('/uploads/<path:filename>')
 def serve_uploads(filename):
     """提供uploads目录下的文件访问，支持子目录"""
     import os
     
-    # 打印请求的文件名和UPLOAD_FOLDER配置，用于调试
+    # 打印请求的文件名和get_upload_folder()配置，用于调试
     print(f"请求的文件路径: {filename}")
-    print(f"UPLOAD_FOLDER配置: {app.config['UPLOAD_FOLDER']}")
+    print(f"get_upload_folder()配置: {get_upload_folder()}")
     
     # 构建完整的文件路径
-    full_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    full_path = os.path.join(get_upload_folder(), filename)
     print(f"完整的文件路径: {full_path}")
     
     # 检查文件是否存在
@@ -883,7 +956,7 @@ def serve_uploads(filename):
             'error': 'File not found',
             'requested_path': filename,
             'full_path': full_path,
-            'upload_folder': app.config['UPLOAD_FOLDER']
+            'upload_folder': get_upload_folder()
         }), 404
     
     # 安全检查，防止路径遍历攻击
@@ -895,7 +968,7 @@ def serve_uploads(filename):
         }), 400
     
     print(f"成功找到文件: {full_path}")
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    return send_from_directory(get_upload_folder(), filename)
 
 
 @app.route('/api/upload', methods=['POST'])
@@ -909,7 +982,7 @@ def upload_folder():
     
     for file in files:
         if file.filename != '':
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename or '')
+            filepath = os.path.join(get_upload_folder(), file.filename or '')
             file.save(filepath)
             uploaded_files.append(file.filename or '')
     
@@ -929,13 +1002,13 @@ def upload_labelme_dataset():
         
         # 读取现有的类别和标注信息
         classes = []
-        if os.path.exists(CLASSES_FILE):
-            with open(CLASSES_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(get_classes_file()):
+            with open(get_classes_file(), 'r', encoding='utf-8') as f:
                 classes = json.load(f)
         
         annotations = {}
-        if os.path.exists(ANNOTATIONS_FILE):
-            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(get_annotations_file()):
+            with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                 annotations = json.load(f)
         
         # 获取已有类别名称集合，便于快速查找
@@ -956,7 +1029,7 @@ def upload_labelme_dataset():
         # 处理图像文件
         for image_filename, image_file in image_files.items():
             # 保存图像文件
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
+            image_path = os.path.join(get_upload_folder(), image_filename)
             image_file.save(image_path)
             uploaded_files.append(image_filename)
             
@@ -1039,12 +1112,12 @@ def upload_labelme_dataset():
                 processed_annotations += 1
         
         # 保存更新后的类别和标注信息
-        # 确保ANNOTATIONS_FOLDER目录存在
-        os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
-        with open(CLASSES_FILE, 'w', encoding='utf-8') as f:
+        # 确保get_annotations_folder()目录存在
+        os.makedirs(get_annotations_folder(), exist_ok=True)
+        with open(get_classes_file(), 'w', encoding='utf-8') as f:
             json.dump(classes, f, indent=2)
         
-        with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+        with open(get_annotations_file(), 'w', encoding='utf-8') as f:
             json.dump(annotations, f, indent=2)
         
         return jsonify({
@@ -1099,13 +1172,13 @@ def upload_roboflow_dataset():
 
         # 读取现有的类别和标注信息
         classes = []
-        if os.path.exists(CLASSES_FILE):
-            with open(CLASSES_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(get_classes_file()):
+            with open(get_classes_file(), 'r', encoding='utf-8') as f:
                 classes = json.load(f)
 
         annotations = {}
-        if os.path.exists(ANNOTATIONS_FILE):
-            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(get_annotations_file()):
+            with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                 annotations = json.load(f)
 
         existing_class_names = {cls['name'] for cls in classes}
@@ -1220,7 +1293,7 @@ def upload_roboflow_dataset():
 
         for basename, image_path in image_files.items():
             filename = os.path.basename(image_path)
-            dest_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            dest_path = os.path.join(get_upload_folder(), filename)
 
             # 跳过已存在的同名文件
             if os.path.exists(dest_path):
@@ -1299,11 +1372,11 @@ def upload_roboflow_dataset():
                     annotations[filename] = image_annotations
 
         # 保存更新后的类别和标注信息
-        os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
-        with open(CLASSES_FILE, 'w', encoding='utf-8') as f:
+        os.makedirs(get_annotations_folder(), exist_ok=True)
+        with open(get_classes_file(), 'w', encoding='utf-8') as f:
             json.dump(classes, f, indent=2, ensure_ascii=False)
 
-        with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+        with open(get_annotations_file(), 'w', encoding='utf-8') as f:
             json.dump(annotations, f, indent=2, ensure_ascii=False)
 
         result = {
@@ -1342,7 +1415,7 @@ def rotate_image():
         if angle not in (90, -90, 180):
             return jsonify({'error': 'Angle must be 90, -90, or 180'}), 400
 
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
+        image_path = os.path.join(get_upload_folder(), image_name)
         if not os.path.exists(image_path):
             return jsonify({'error': f'Image not found: {image_name}'}), 404
 
@@ -1374,8 +1447,8 @@ def rotate_image():
 
         # 更新标注坐标
         annotations = {}
-        if os.path.exists(ANNOTATIONS_FILE):
-            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(get_annotations_file()):
+            with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                 annotations = json.load(f)
 
         if image_name in annotations and annotations[image_name]:
@@ -1403,7 +1476,7 @@ def rotate_image():
 
             annotations[image_name] = rotated_annotations
 
-            with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+            with open(get_annotations_file(), 'w', encoding='utf-8') as f:
                 json.dump(annotations, f, indent=2, ensure_ascii=False)
 
         return jsonify({
@@ -1454,8 +1527,8 @@ def ai_label():
         
         # 读取现有的标注信息
         annotations = {}
-        if os.path.exists(ANNOTATIONS_FILE):
-            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(get_annotations_file()):
+            with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                 annotations = json.load(f)
         
         processed_count = 0
@@ -1466,7 +1539,7 @@ def ai_label():
         # 处理每张图片
         for image_name in images:
             # 构建图片路径
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
+            image_path = os.path.join(get_upload_folder(), image_name)
             if not os.path.exists(image_path):
                 logging.error(f"Image not found: {image_path}")
                 continue
@@ -1535,9 +1608,9 @@ def ai_label():
                 continue
         
         # 保存更新后的标注信息
-        # 确保ANNOTATIONS_FOLDER目录存在
-        os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
-        with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+        # 确保get_annotations_folder()目录存在
+        os.makedirs(get_annotations_folder(), exist_ok=True)
+        with open(get_annotations_file(), 'w', encoding='utf-8') as f:
             json.dump(annotations, f, indent=2, ensure_ascii=False)
         
         # 发送最终进度更新
@@ -1595,7 +1668,7 @@ def upload_video():
     
     try:
         # 保存视频文件到临时位置
-        temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_' + (video_file.filename or 'video'))
+        temp_video_path = os.path.join(get_upload_folder(), 'temp_' + (video_file.filename or 'video'))
         video_file.save(temp_video_path)
         
         # 抽帧处理，传递原始文件名
@@ -1637,7 +1710,7 @@ def extract_frames(video_path, frame_interval, original_filename=None):
         if frame_count % frame_interval == 0:
             # 生成文件名
             frame_filename = f"{video_name}_frame_{saved_frame_count:06d}.jpg"
-            frame_path = os.path.join(app.config['UPLOAD_FOLDER'], frame_filename)
+            frame_path = os.path.join(get_upload_folder(), frame_filename)
             
             # 保存帧为图片
             cv2.imwrite(frame_path, frame)
@@ -1654,9 +1727,9 @@ def extract_frames(video_path, frame_interval, original_filename=None):
 def get_annotations(image_name):
     """获取特定图片的标注"""
     annotations = {}
-    if os.path.exists(ANNOTATIONS_FILE):
+    if os.path.exists(get_annotations_file()):
         try:
-            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+            with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                 annotations = json.load(f)
         except json.JSONDecodeError:
             # 如果JSON文件无效或为空，使用空字典
@@ -1676,9 +1749,9 @@ def save_annotations(image_name):
     data = request.json
     
     annotations = {}
-    if os.path.exists(ANNOTATIONS_FILE):
+    if os.path.exists(get_annotations_file()):
         try:
-            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+            with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                 annotations = json.load(f)
         except json.JSONDecodeError:
             # 如果JSON文件无效或为空，使用空字典
@@ -1690,9 +1763,9 @@ def save_annotations(image_name):
     
     annotations[image_name] = data
     
-    # 确保ANNOTATIONS_FOLDER目录存在
-    os.makedirs(ANNOTATIONS_FOLDER, exist_ok=True)
-    with open(ANNOTATIONS_FILE, 'w', encoding='utf-8') as f:
+    # 确保get_annotations_folder()目录存在
+    os.makedirs(get_annotations_folder(), exist_ok=True)
+    with open(get_annotations_file(), 'w', encoding='utf-8') as f:
         json.dump(annotations, f, indent=2, ensure_ascii=False)
     
     return jsonify({'message': 'Annotations saved successfully'})
@@ -1718,10 +1791,10 @@ def save_api_config():
             return jsonify({'success': False, 'error': 'No config data provided'}), 400
         
         # 确保uploads/config目录存在
-        os.makedirs(os.path.join(UPLOAD_FOLDER, 'config'), exist_ok=True)
+        os.makedirs(os.path.join(get_upload_folder(), 'config'), exist_ok=True)
         
         # 保存配置到文件
-        config_path = os.path.join(UPLOAD_FOLDER, 'config', 'ai_config.json')
+        config_path = os.path.join(get_upload_folder(), 'config', 'ai_config.json')
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(config_data, f, indent=2, ensure_ascii=False)
         
@@ -1739,7 +1812,7 @@ def load_api_config():
     """加载API配置"""
     try:
         # 读取配置文件
-        config_path = os.path.join(UPLOAD_FOLDER, 'config', 'ai_config.json')
+        config_path = os.path.join(get_upload_folder(), 'config', 'ai_config.json')
         if not os.path.exists(config_path):
             # 返回默认配置
             default_config = {
@@ -2446,8 +2519,8 @@ def export_dataset():
         
         # 获取全局类别列表
         classes = []
-        if os.path.exists(CLASSES_FILE):
-            with open(CLASSES_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(get_classes_file()):
+            with open(get_classes_file(), 'r', encoding='utf-8') as f:
                 classes = json.load(f)
         
         # 创建临时目录用于生成数据集
@@ -2469,14 +2542,14 @@ def export_dataset():
         
         # 获取所有图片
         images = []
-        for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+        for filename in os.listdir(get_upload_folder()):
             if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif')):
                 images.append(filename)
         
         # 根据样本选择参数过滤图片
         annotations = {}
-        if os.path.exists(ANNOTATIONS_FILE):
-            with open(ANNOTATIONS_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(get_annotations_file()):
+            with open(get_annotations_file(), 'r', encoding='utf-8') as f:
                 annotations = json.load(f)
         
         # 根据用户选择过滤图片
@@ -2554,7 +2627,7 @@ names: {selected_classes}
         for split_name, split_images in splits:
             for image_name in split_images:
                 # 复制图片，添加前缀
-                src_img_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
+                src_img_path = os.path.join(get_upload_folder(), image_name)
                 if export_prefix:
                     dst_img_name = f"{export_prefix}_{image_name}"
                 else:
@@ -2841,6 +2914,140 @@ def handle_disconnect(sid):
         # 从映射字典中移除该连接
         del connection_task_map[sid]
         print(f'移除连接和任务的关联: {sid} -> {task_id}')
+
+# 工程管理 API
+@app.route('/api/projects', methods=['GET'])
+def list_projects():
+    """列出所有工程。"""
+    os.makedirs(PROJECTS_FOLDER, exist_ok=True)
+    projects = []
+    for name in os.listdir(PROJECTS_FOLDER):
+        project_path = os.path.join(PROJECTS_FOLDER, name)
+        if os.path.isdir(project_path):
+            image_count = len([
+                f for f in os.listdir(project_path)
+                if os.path.isfile(os.path.join(project_path, f))
+                and f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif'))
+            ])
+            ann_file = os.path.join(project_path, 'annotations', 'annotations.json')
+            last_modified = os.path.getmtime(ann_file) if os.path.exists(ann_file) else 0
+            projects.append({
+                'name': name,
+                'image_count': image_count,
+                'last_modified': last_modified
+            })
+    projects.sort(key=lambda x: x['last_modified'], reverse=True)
+    return jsonify({'projects': projects})
+
+
+@app.route('/api/projects', methods=['POST'])
+def create_project():
+    """创建新工程。"""
+    data = request.json or {}
+    name = data.get('name', '').strip()
+    name = sanitize_project_name(name)
+
+    if not name:
+        return jsonify({'error': '工程名称不能为空'}), 400
+
+    project_path = get_project_path(name)
+    if os.path.exists(project_path):
+        return jsonify({'error': '工程名称已存在'}), 400
+
+    init_project(name)
+    return jsonify({'success': True, 'name': name})
+
+
+@app.route('/api/projects/<name>', methods=['PUT'])
+def rename_project(name):
+    """重命名工程。"""
+    data = request.json or {}
+    new_name = data.get('new_name', '').strip()
+    new_name = sanitize_project_name(new_name)
+
+    if not new_name:
+        return jsonify({'error': '新名称不能为空'}), 400
+
+    old_path = get_project_path(name)
+    new_path = get_project_path(new_name)
+
+    if not os.path.exists(old_path):
+        return jsonify({'error': '工程不存在'}), 404
+
+    if os.path.exists(new_path):
+        return jsonify({'error': '新名称已存在'}), 400
+
+    os.rename(old_path, new_path)
+
+    # 如果当前工程是被重命名的，更新 session
+    if get_current_project() == name:
+        set_current_project(new_name)
+
+    return jsonify({'success': True, 'name': new_name})
+
+
+@app.route('/api/projects/<name>', methods=['DELETE'])
+def delete_project(name):
+    """删除工程。"""
+    project_path = get_project_path(name)
+    if not os.path.exists(project_path):
+        return jsonify({'error': '工程不存在'}), 404
+
+    shutil.rmtree(project_path, ignore_errors=True)
+
+    # 如果删除的是当前工程，切换到 default
+    if get_current_project() == name:
+        set_current_project('default')
+        ensure_default_project()
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/projects/switch', methods=['POST'])
+def switch_project():
+    """切换当前工程。"""
+    data = request.json or {}
+    name = data.get('name', '').strip()
+
+    project_path = get_project_path(name)
+    if not os.path.exists(project_path):
+        return jsonify({'error': '工程不存在'}), 404
+
+    set_current_project(name)
+    return jsonify({'success': True, 'name': name})
+
+
+@app.route('/api/projects/current', methods=['GET'])
+def get_current_project_info():
+    """获取当前工程信息。"""
+    name = get_current_project()
+    project_path = get_project_path(name)
+    if not os.path.exists(project_path):
+        ensure_default_project()
+        name = 'default'
+
+    image_count = len([
+        f for f in os.listdir(project_path)
+        if os.path.isfile(os.path.join(project_path, f))
+        and f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif'))
+    ])
+    return jsonify({
+        'name': name,
+        'image_count': image_count
+    })
+
+
+@app.route('/projects')
+def projects_page():
+    """工程管理页面。"""
+    return render_template('projects.html', version=APP_VERSION)
+
+
+@app.route('/label')
+def label_page():
+    """标注页面。"""
+    return render_template('index.html', version=APP_VERSION)
+
 
 if __name__ == '__main__':
     import argparse

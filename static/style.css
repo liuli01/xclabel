@@ -45,6 +45,34 @@ body {
 .nav-buttons {
     display: flex;
     gap: 8px; /* 按钮之间的间距 */
+    align-items: center;
+}
+
+/* 当前工程显示 */
+.current-project-display {
+    background-color: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: rgba(56, 189, 248, 0.9);
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.current-project-display::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background-color: #38bdf8;
+    border-radius: 50%;
+    flex-shrink: 0;
 }
 
 /* 导航栏按钮全新样式 - 简洁专业风格 */

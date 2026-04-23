@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xclabel - 工程管理</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='all.min.css') }}">
+    <style>
+        .projects-page {
+            min-height: 100vh;
+            background-color: #f5f5f5;
+        }
+        .projects-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 30px 20px;
+        }
+        .projects-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .projects-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+            color: #333;
+        }
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        .project-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+        .project-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        }
+        .project-card .project-name {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #222;
+            margin-bottom: 12px;
+            word-break: break-all;
+        }
+        .project-card .project-meta {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .project-card .project-meta i {
+            width: 16px;
+            color: #888;
+        }
+        .project-card .project-actions {
+            margin-top: auto;
+            padding-top: 16px;
+            display: flex;
+            gap: 8px;
+        }
+        .project-card .project-actions .btn {
+            flex: 1;
+            font-size: 0.85em;
+            height: 32px;
+            min-height: 32px;
+        }
+        .empty-projects {
+            text-align: center;
+            padding: 60px 20px;
+            color: #888;
+        }
+        .empty-projects i {
+            font-size: 3em;
+            margin-bottom: 16px;
+            color: #ccc;
+        }
+        .empty-projects p {
+            font-size: 1.1em;
+            margin: 0 0 20px 0;
+        }
+        /* Modal styles reuse from main */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 10% auto;
+            padding: 24px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 340px;
+            position: relative;
+        }
+        .modal-content h2 {
+            margin: 0 0 20px 0;
+            font-size: 1.2em;
+        }
+        .modal-content .form-group {
+            margin-bottom: 16px;
+        }
+        .modal-content label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .modal-content input[type="text"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1em;
+        }
+        .modal-content .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .modal .close {
+            position: absolute;
+            right: 16px;
+            top: 16px;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #999;
+        }
+        .modal .close:hover {
+            color: #333;
+        }
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: auto;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            z-index: 2000;
+            display: none;
+            width: fit-content;
+            max-width: 280px;
+            white-space: nowrap;
+            font-size: 13px;
+        }
+        .toast.error {
+            background-color: #ef4444;
+        }
+        .toast.success {
+            background-color: #22c55e;
+        }
+    </style>
+</head>
+<body>
+    <div class="projects-page">
+        <!-- 顶部导航栏 -->
+        <header class="navbar">
+            <div class="logo">
+                <h1><span class="x">x</span>clabel <span class="version">{{ version }}</span></h1>
+            </div>
+            <div class="nav-buttons">
+                <button id="createProjectBtn" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> 新建工程
+                </button>
+            </div>
+        </header>
+
+        <div class="projects-container">
+            <div class="projects-header">
+                <h2><i class="fas fa-folder-open"></i> 工程列表</h2>
+            </div>
+            <div id="projectsGrid" class="projects-grid">
+                <!-- 工程卡片将通过JavaScript动态加载 -->
+            </div>
+            <div id="emptyProjects" class="empty-projects" style="display: none;">
+                <i class="fas fa-folder-open"></i>
+                <p>暂无工程，请创建新工程</p>
+                <button id="createProjectBtnEmpty" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> 创建第一个工程
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建工程模态框 -->
+    <div id="createProjectModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2><i class="fas fa-plus"></i> 新建工程</h2>
+            <form id="createProjectForm">
+                <div class="form-group">
+                    <label for="projectNameInput">工程名称:</label>
+                    <input type="text" id="projectNameInput" placeholder="请输入工程名称" required>
+                    <small style="color: #888;">只允许字母、数字、中文、下划线和连字符</small>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelCreateProject">取消</button>
+                    <button type="submit" class="btn btn-success">创建</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 重命名工程模态框 -->
+    <div id="renameProjectModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2><i class="fas fa-edit"></i> 重命名工程</h2>
+            <form id="renameProjectForm">
+                <input type="hidden" id="renameProjectOldName">
+                <div class="form-group">
+                    <label for="renameProjectInput">新名称:</label>
+                    <input type="text" id="renameProjectInput" placeholder="请输入新名称" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelRenameProject">取消</button>
+                    <button type="submit" class="btn btn-success">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadProjects();
+            setupEventListeners();
+        });
+
+        // 加载工程列表
+        function loadProjects() {
+            fetch('/api/projects')
+                .then(response => response.json())
+                .then(data => {
+                    const projects = data.projects || [];
+                    renderProjects(projects);
+                })
+                .catch(error => {
+                    console.error('加载工程列表失败:', error);
+                    showToast('加载失败', 'error');
+                });
+        }
+
+        // 渲染工程列表
+        function renderProjects(projects) {
+            const grid = document.getElementById('projectsGrid');
+            const empty = document.getElementById('emptyProjects');
+
+            if (projects.length === 0) {
+                grid.innerHTML = '';
+                grid.style.display = 'none';
+                empty.style.display = 'block';
+                return;
+            }
+
+            grid.style.display = 'grid';
+            empty.style.display = 'none';
+            grid.innerHTML = '';
+
+            projects.forEach(project => {
+                const card = document.createElement('div');
+                card.className = 'project-card';
+
+                const dateStr = project.last_modified > 0
+                    ? new Date(project.last_modified * 1000).toLocaleString('zh-CN')
+                    : '从未修改';
+
+                card.innerHTML = `
+                    <div class="project-name"><i class="fas fa-folder"></i> ${escapeHtml(project.name)}</div>
+                    <div class="project-meta"><i class="fas fa-images"></i> ${project.image_count} 张图片</div>
+                    <div class="project-meta"><i class="fas fa-clock"></i> ${dateStr}</div>
+                    <div class="project-actions">
+                        <button class="btn btn-primary enter-project-btn" data-name="${escapeHtml(project.name)}">
+                            <i class="fas fa-arrow-right"></i> 进入标注
+                        </button>
+                        <button class="btn btn-secondary rename-project-btn" data-name="${escapeHtml(project.name)}">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-danger delete-project-btn" data-name="${escapeHtml(project.name)}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            // 绑定按钮事件
+            document.querySelectorAll('.enter-project-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    enterProject(this.dataset.name);
+                });
+            });
+            document.querySelectorAll('.rename-project-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    showRenameModal(this.dataset.name);
+                });
+            });
+            document.querySelectorAll('.delete-project-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    deleteProject(this.dataset.name);
+                });
+            });
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 创建工程按钮
+            document.getElementById('createProjectBtn').addEventListener('click', showCreateModal);
+            document.getElementById('createProjectBtnEmpty').addEventListener('click', showCreateModal);
+
+            // 模态框关闭
+            document.querySelectorAll('.modal .close').forEach(closeBtn => {
+                closeBtn.addEventListener('click', function() {
+                    this.closest('.modal').style.display = 'none';
+                });
+            });
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) modal.style.display = 'none';
+                });
+            });
+
+            // 取消按钮
+            document.getElementById('cancelCreateProject').addEventListener('click', function() {
+                document.getElementById('createProjectModal').style.display = 'none';
+            });
+            document.getElementById('cancelRenameProject').addEventListener('click', function() {
+                document.getElementById('renameProjectModal').style.display = 'none';
+            });
+
+            // 创建工程表单
+            document.getElementById('createProjectForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                const name = document.getElementById('projectNameInput').value.trim();
+                if (!name) {
+                    showToast('请输入工程名称', 'error');
+                    return;
+                }
+                createProject(name);
+            });
+
+            // 重命名工程表单
+            document.getElementById('renameProjectForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                const oldName = document.getElementById('renameProjectOldName').value;
+                const newName = document.getElementById('renameProjectInput').value.trim();
+                if (!newName) {
+                    showToast('请输入新名称', 'error');
+                    return;
+                }
+                renameProject(oldName, newName);
+            });
+        }
+
+        // 显示创建工程模态框
+        function showCreateModal() {
+            document.getElementById('projectNameInput').value = '';
+            document.getElementById('createProjectModal').style.display = 'block';
+            document.getElementById('projectNameInput').focus();
+        }
+
+        // 显示重命名模态框
+        function showRenameModal(name) {
+            document.getElementById('renameProjectOldName').value = name;
+            document.getElementById('renameProjectInput').value = name;
+            document.getElementById('renameProjectModal').style.display = 'block';
+            document.getElementById('renameProjectInput').focus();
+        }
+
+        // 创建工程
+        function createProject(name) {
+            fetch('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showToast(data.error, 'error');
+                    return;
+                }
+                showToast('创建成功');
+                document.getElementById('createProjectModal').style.display = 'none';
+                loadProjects();
+            })
+            .catch(error => {
+                console.error('创建工程失败:', error);
+                showToast('创建失败', 'error');
+            });
+        }
+
+        // 重命名工程
+        function renameProject(oldName, newName) {
+            fetch(`/api/projects/${encodeURIComponent(oldName)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_name: newName })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showToast(data.error, 'error');
+                    return;
+                }
+                showToast('重命名成功');
+                document.getElementById('renameProjectModal').style.display = 'none';
+                loadProjects();
+            })
+            .catch(error => {
+                console.error('重命名工程失败:', error);
+                showToast('重命名失败', 'error');
+            });
+        }
+
+        // 删除工程
+        function deleteProject(name) {
+            if (!confirm(`确定要删除工程 "${name}" 吗？此操作将删除该工程下的所有数据，且不可恢复。`)) {
+                return;
+            }
+            fetch(`/api/projects/${encodeURIComponent(name)}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showToast(data.error, 'error');
+                    return;
+                }
+                showToast('已删除');
+                loadProjects();
+            })
+            .catch(error => {
+                console.error('删除工程失败:', error);
+                showToast('删除失败', 'error');
+            });
+        }
+
+        // 进入工程（切换并跳转）
+        function enterProject(name) {
+            fetch('/api/projects/switch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showToast(data.error, 'error');
+                    return;
+                }
+                // 保存当前工程到localStorage
+                localStorage.setItem('xclabel_current_project', name);
+                // 跳转到标注页面
+                window.location.href = '/label';
+            })
+            .catch(error => {
+                console.error('切换工程失败:', error);
+                showToast('切换失败', 'error');
+            });
+        }
+
+        // HTML转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 显示Toast提示
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + (type || '');
+            toast.style.display = 'block';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

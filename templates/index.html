@@ -12,9 +12,13 @@
         <!-- 顶部导航栏 -->
         <header class="navbar">
             <div class="logo">
-                <h1 style="cursor: pointer;" onclick="window.location.href='/'"><span class="x">x</span>clabel <span class="version">{{ version }}</span></h1>
+                <h1 style="cursor: pointer;" onclick="window.location.href='/projects'"><span class="x">x</span>clabel <span class="version">{{ version }}</span></h1>
             </div>
             <div class="nav-buttons">
+                <button id="backToProjectsBtn" class="btn btn-secondary" title="返回工程管理">
+                    <i class="fas fa-arrow-left"></i> 返回工程
+                </button>
+                <span id="currentProjectDisplay" class="current-project-display" title="当前工程"></span>
                 <button id="openFolderBtn" class="btn btn-primary">
                     <i class="fas fa-upload"></i> 添加数据集
                 </button>

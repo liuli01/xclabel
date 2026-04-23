@@ -154,10 +154,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // 初始化应用
 function initializeApp() {
+    loadCurrentProject();
     loadClasses();
     loadImages();
     loadShortcutSettings();
     setupEventListeners();
+}
+
+// 加载当前工程信息
+function loadCurrentProject() {
+    fetch('/api/projects/current')
+        .then(response => response.json())
+        .then(data => {
+            const display = document.getElementById('currentProjectDisplay');
+            if (display && data.name) {
+                display.textContent = data.name;
+                display.title = '当前工程: ' + data.name;
+            }
+            // 同步到 localStorage
+            localStorage.setItem('xclabel_current_project', data.name);
+        })
+        .catch(error => {
+            console.error('加载当前工程信息失败:', error);
+        });
 }
 
 // 设置事件监听器
@@ -167,6 +186,12 @@ function setupEventListeners() {
     document.getElementById('exportBtn').addEventListener('click', showExportModal);
     document.getElementById('settingsBtn').addEventListener('click', showSettingsModal);
     document.getElementById('clearAnnotationBtn').addEventListener('click', clearCurrentAnnotations);
+    const backBtn = document.getElementById('backToProjectsBtn');
+    if (backBtn) {
+        backBtn.addEventListener('click', function() {
+            window.location.href = '/projects';
+        });
+    }
     // AI配置按钮
     document.getElementById('aiConfigBtn').addEventListener('click', function() {
         window.location.href = '/ai-config';

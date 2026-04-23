@@ -4,9 +4,12 @@
 .vs
 plugins
 uploads
+projects
 dist
 build
-venv
+.venv
 __pycache__
 app/__pycache__
 static/storage
+.pytest_cache
+.ruff_cache
