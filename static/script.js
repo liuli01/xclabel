@@ -14,6 +14,10 @@ let resizeHandle = null; // 当前调整大小的控制点
 let lastMousePos = null; // 上次鼠标位置
 let polygonPoints = []; // 多边形绘制时的顶点数组
 let isPolygonDrawing = false; // 是否正在绘制多边形
+let isPoseDrawing = false; // 是否正在绘制姿态标注
+let poseStage = 'bbox'; // 'bbox' | 'keypoints'
+let poseBbox = null; // 姿态标注的边界框
+let poseKeypoints = []; // 姿态标注的关键点
 let isPanning = false; // 是否正在平移图片
 let panOffsetX = 0; // 图片水平平移偏移量
 let panOffsetY = 0; // 图片垂直平移偏移量
@@ -155,37 +159,112 @@ document.addEventListener('DOMContentLoaded', function() {
 // 初始化应用
 function initializeApp() {
     loadCurrentProject();
-    loadClasses();
-    loadImages();
-    loadShortcutSettings();
-    setupEventListeners();
+    // 只在标注页执行标注相关的初始化
+    if (document.getElementById('imageCanvas')) {
+        loadClasses();
+        loadImages();
+        loadShortcutSettings();
+        setupEventListeners();
+    }
 }
 
 // 加载当前工程信息
 function loadCurrentProject() {
-    fetch('/api/projects/current')
-        .then(response => response.json())
-        .then(data => {
-            const display = document.getElementById('currentProjectDisplay');
-            if (display && data.name) {
-                display.textContent = data.name;
-                display.title = '当前工程: ' + data.name;
-            }
-            // 同步到 localStorage
-            localStorage.setItem('xclabel_current_project', data.name);
+    const urlParams = new URLSearchParams(window.location.search);
+    const projectFromUrl = urlParams.get('project');
+
+    function handleProjectData(data) {
+        const display = document.getElementById('currentProjectDisplay');
+        if (display && data.name) {
+            display.textContent = data.name;
+            display.title = '当前工程: ' + data.name;
+        }
+        localStorage.setItem('xclabel_current_project', data.name);
+        // 获取工程类型并应用工具过滤
+        fetch('/api/project-info?project=' + encodeURIComponent(data.name))
+            .then(r => r.json())
+            .then(info => {
+                if (info.task_type) {
+                    window.currentProjectTaskType = info.task_type;
+                    applyProjectTools(info.task_type);
+                }
+            })
+            .catch(() => {});
+    }
+
+    if (projectFromUrl) {
+        // URL 中有 project 参数，先切换到该工程
+        fetch('/api/projects/switch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: projectFromUrl })
         })
+        .then(() => fetch('/api/projects/current'))
+        .then(response => response.json())
+        .then(handleProjectData)
         .catch(error => {
             console.error('加载当前工程信息失败:', error);
         });
+    } else {
+        fetch('/api/projects/current')
+            .then(response => response.json())
+            .then(handleProjectData)
+            .catch(error => {
+                console.error('加载当前工程信息失败:', error);
+            });
+    }
+}
+
+// 根据工程类型显示/隐藏标注工具
+function applyProjectTools(taskType) {
+    const toolMap = {
+        rect: ['detect', 'segment'],
+        polygon: ['segment'],
+        obb: ['obb'],
+        pose: ['pose'],
+        classify: ['classify'],
+        move: ['detect', 'segment', 'obb', 'pose', 'classify'],
+    };
+    const toolIds = ['rectTool', 'polygonTool', 'obbTool', 'poseTool', 'classifyTool', 'moveTool'];
+    const toolKeys = ['rect', 'polygon', 'obb', 'pose', 'classify', 'move'];
+    let firstVisibleTool = null;
+
+    toolIds.forEach((id, idx) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const key = toolKeys[idx];
+        const allowed = toolMap[key] || [];
+        if (allowed.includes(taskType)) {
+            el.style.display = 'flex';
+            el.style.opacity = '1';
+            el.disabled = false;
+            if (!firstVisibleTool) firstVisibleTool = key;
+        } else {
+            el.style.display = 'none';
+            el.disabled = true;
+        }
+    });
+
+    // 如果当前工具被隐藏，切换到第一个可用工具
+    if (firstVisibleTool && currentTool) {
+        const currentAllowed = toolMap[currentTool] || [];
+        if (!currentAllowed.includes(taskType)) {
+            switchTool(firstVisibleTool);
+        }
+    }
 }
 
 // 设置事件监听器
 function setupEventListeners() {
     // 导航按钮
-    document.getElementById('openFolderBtn').addEventListener('click', showDatasetModal);
-    document.getElementById('exportBtn').addEventListener('click', showExportModal);
-    document.getElementById('settingsBtn').addEventListener('click', showSettingsModal);
-    document.getElementById('clearAnnotationBtn').addEventListener('click', clearCurrentAnnotations);
+    const openFolderBtn = document.getElementById('openFolderBtn');
+    if (openFolderBtn) openFolderBtn.addEventListener('click', showDatasetModal);
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.addEventListener('click', showExportModal);
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) settingsBtn.addEventListener('click', showSettingsModal);
+    const clearAnnotationBtn = document.getElementById('clearAnnotationBtn');
+    if (clearAnnotationBtn) clearAnnotationBtn.addEventListener('click', clearCurrentAnnotations);
     const backBtn = document.getElementById('backToProjectsBtn');
     if (backBtn) {
         backBtn.addEventListener('click', function() {
@@ -193,18 +272,29 @@ function setupEventListeners() {
         });
     }
     // AI配置按钮
-    document.getElementById('aiConfigBtn').addEventListener('click', function() {
+    const aiConfigBtn = document.getElementById('aiConfigBtn');
+    if (aiConfigBtn) aiConfigBtn.addEventListener('click', function() {
         window.location.href = '/ai-config';
     });
-    document.getElementById('saveAnnotationBtn').addEventListener('click', saveAnnotations);
+    const saveAnnotationBtn = document.getElementById('saveAnnotationBtn');
+    if (saveAnnotationBtn) saveAnnotationBtn.addEventListener('click', saveAnnotations);
     
     // 搜索框
     document.getElementById('imageSearch').addEventListener('input', filterImages);
     
     // 工具按钮
-    document.getElementById('rectTool').addEventListener('click', () => switchTool('rect'));
-    document.getElementById('polygonTool').addEventListener('click', () => switchTool('polygon'));
-    document.getElementById('moveTool').addEventListener('click', () => switchTool('move'));
+    const rectTool = document.getElementById('rectTool');
+    const polygonTool = document.getElementById('polygonTool');
+    const obbTool = document.getElementById('obbTool');
+    const poseTool = document.getElementById('poseTool');
+    const classifyTool = document.getElementById('classifyTool');
+    const moveTool = document.getElementById('moveTool');
+    if (rectTool) rectTool.addEventListener('click', () => switchTool('rect'));
+    if (polygonTool) polygonTool.addEventListener('click', () => switchTool('polygon'));
+    if (obbTool) obbTool.addEventListener('click', () => switchTool('obb'));
+    if (poseTool) poseTool.addEventListener('click', () => switchTool('pose'));
+    if (classifyTool) classifyTool.addEventListener('click', () => switchTool('classify'));
+    if (moveTool) moveTool.addEventListener('click', () => switchTool('move'));
 
     // 旋转按钮
     const rotateLeftBtn = document.getElementById('rotateLeftBtn');
@@ -261,31 +351,50 @@ function setupEventListeners() {
     setupDatasetUploadEvents();
     
     // 导出表单事件
-    document.getElementById('exportForm').addEventListener('submit', handleExport);
-    
+    const exportForm = document.getElementById('exportForm');
+    if (exportForm) exportForm.addEventListener('submit', handleExport);
+
     // 设置表单事件
-    document.getElementById('settingsForm').addEventListener('submit', handleSettingsSave);
-    
+    const settingsForm = document.getElementById('settingsForm');
+    if (settingsForm) settingsForm.addEventListener('submit', handleSettingsSave);
+
     // 编辑类别表单事件
-    document.getElementById('editClassForm').addEventListener('submit', handleEditClass);
-    
-    // YOLO11安装和卸载按钮事件
-    document.getElementById('installYolo11Btn').addEventListener('click', installYolo11);
-    document.getElementById('uninstallYolo11Btn').addEventListener('click', uninstallYolo11);
-    
-    // YOLO11模型管理按钮事件
-    document.getElementById('downloadModelsBtn').addEventListener('click', downloadModels);
-    document.getElementById('refreshModelsBtn').addEventListener('click', refreshModels);
-    
-    // YOLO11模型拖放事件
+    const editClassForm = document.getElementById('editClassForm');
+    if (editClassForm) editClassForm.addEventListener('submit', handleEditClass);
+
+    // YOLO训练环境安装和卸载按钮事件
+    const installYolo11Btn = document.getElementById('installYolo11Btn');
+    const uninstallYolo11Btn = document.getElementById('uninstallYolo11Btn');
+    if (installYolo11Btn) installYolo11Btn.addEventListener('click', installYolo11);
+    if (uninstallYolo11Btn) uninstallYolo11Btn.addEventListener('click', uninstallYolo11);
+
+    // YOLO版本切换事件
+    const yoloVersionSelect = document.getElementById('yoloVersionSelect');
+    if (yoloVersionSelect) {
+        yoloVersionSelect.addEventListener('change', function() {
+            updateYoloModelCheckboxes();
+            checkYolo11InstallStatus();
+            refreshModels();
+        });
+    }
+
+    // YOLO模型管理按钮事件
+    const downloadModelsBtn = document.getElementById('downloadModelsBtn');
+    const refreshModelsBtn = document.getElementById('refreshModelsBtn');
+    if (downloadModelsBtn) downloadModelsBtn.addEventListener('click', downloadModels);
+    if (refreshModelsBtn) refreshModelsBtn.addEventListener('click', refreshModels);
+
+    // YOLO模型拖放事件
     setupModelDropZoneEvents();
-    
+
     // 快捷键
     document.addEventListener('keydown', handleKeyDown);
-    
+
     // 全选和删除按钮
-    document.getElementById('selectAllBtn').addEventListener('click', selectAllImages);
-    document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelectedImages);
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+    if (selectAllBtn) selectAllBtn.addEventListener('click', selectAllImages);
+    if (deleteSelectedBtn) deleteSelectedBtn.addEventListener('click', deleteSelectedImages);
 }
 
 
@@ -301,17 +410,23 @@ function switchTool(tool) {
     // 重置所有绘制状态
     isDrawing = false;
     isPolygonDrawing = false;
+    isPoseDrawing = false;
+    poseStage = 'bbox';
+    poseBbox = null;
+    poseKeypoints = [];
     startPoint = null;
     currentPoint = null;
     polygonPoints = [];
-    
+
     // 设置当前工具
     currentTool = tool;
-    
+
     // 更新鼠标样式
     const canvas = document.getElementById('imageCanvas');
     if (tool === 'move') {
         canvas.style.cursor = 'grab';
+    } else if (tool === 'classify') {
+        canvas.style.cursor = 'pointer';
     } else {
         canvas.style.cursor = 'crosshair';
     }
@@ -342,6 +457,27 @@ function handleMouseDown(e) {
     const x = (canvasX - imgX) / displayRatio;
     const y = (canvasY - imgY) / displayRatio;
 
+    // 分类工具：直接处理，不检测标注
+    if (currentTool === 'classify') {
+        const selectedClass = getSelectedClass();
+        if (selectedClass) {
+            pushUndoState();
+            // 移除已有的分类标注
+            currentAnnotations = currentAnnotations.filter(a => a.type !== 'classify');
+            const annotation = {
+                id: Date.now(),
+                class: selectedClass.name,
+                points: [],
+                type: 'classify'
+            };
+            currentAnnotations.push(annotation);
+            saveAnnotations();
+            updateAnnotationList();
+            showToast('已分类为: ' + selectedClass.name);
+        }
+        return;
+    }
+
     // 检查是否点击了某个标注的控制点
     const resizeResult = checkResizeHandleClick(canvasX, canvasY, displayRatio, imgX, imgY);
     if (resizeResult) {
@@ -366,7 +502,7 @@ function handleMouseDown(e) {
         redrawCanvas();
         return;
     }
-    
+
     // 如果点击了空白区域
     selectedAnnotationId = null;
     updateAnnotationListDebounced();
@@ -407,12 +543,35 @@ function handleMouseDown(e) {
         currentPoint = {x: x, y: y};
         redrawCanvas();
     }
+
+    // 处理旋转框绘制（与矩形相同，但类型为 obb）
+    if (currentTool === 'obb') {
+        isDrawing = true;
+        startPoint = {x: x, y: y};
+        currentPoint = {x: x, y: y};
+        redrawCanvas();
+    }
+
+    // 处理姿态标注绘制
+    if (currentTool === 'pose') {
+        if (poseStage === 'bbox') {
+            isDrawing = true;
+            startPoint = {x: x, y: y};
+            currentPoint = {x: x, y: y};
+            redrawCanvas();
+        } else {
+            // 放置关键点
+            poseKeypoints.push([x, y, 2]);
+            redrawCanvas();
+        }
+    }
+
 }
 
 // 检查是否点击了调整大小的控制点
 function checkResizeHandleClick(canvasX, canvasY, ratio, imgX, imgY) {
     for (const annotation of currentAnnotations) {
-        if (annotation.type !== 'rectangle' || annotation.points.length < 4) continue;
+        if ((annotation.type !== 'rectangle' && annotation.type !== 'obb') || annotation.points.length < 4) continue;
         
         // 计算矩形的四个角点
         const points = annotation.points;
@@ -449,15 +608,22 @@ function checkResizeHandleClick(canvasX, canvasY, ratio, imgX, imgY) {
 // 检查是否点击了某个标注
 function checkAnnotationClick(canvasX, canvasY, ratio, imgX, imgY) {
     for (const annotation of currentAnnotations) {
-        if (annotation.type !== 'rectangle' || annotation.points.length < 4) continue;
-        
+        // 分类标注不可点击移动
+        if (annotation.type === 'classify') continue;
+
+        let points = annotation.points;
+        // 姿态标注使用 bbox 进行点击检测
+        if (annotation.type === 'pose' && annotation.bbox) {
+            points = annotation.bbox;
+        }
+        if (!points || points.length < 4) continue;
+
         // 计算矩形的边界
-        const points = annotation.points;
         const x1 = points[0][0] * ratio + imgX;
         const y1 = points[0][1] * ratio + imgY;
         const x2 = points[2][0] * ratio + imgX;
         const y2 = points[2][1] * ratio + imgY;
-        
+
         // 检查鼠标是否在矩形内部
         if (canvasX >= x1 && canvasX <= x2 && canvasY >= y1 && canvasY <= y2) {
             return annotation;
@@ -533,13 +699,20 @@ function handleMouseMove(e) {
         redrawCanvas();
         return;
     }
-    
-    // 处理矩形绘制过程中的鼠标移动
+
+    // 处理姿态标注 bbox 绘制过程中的鼠标移动
+    if (isDrawing && currentTool === 'pose' && poseStage === 'bbox') {
+        currentPoint = {x: x, y: y};
+        redrawCanvas();
+        return;
+    }
+
+    // 处理矩形/旋转框绘制过程中的鼠标移动
     if (isDrawing) {
         // 更新当前点
         currentPoint = {x: x, y: y};
         redrawCanvas();
-    } else if (currentTool === 'rect' || currentTool === 'polygon') {
+    } else if (currentTool === 'rect' || currentTool === 'polygon' || currentTool === 'obb' || currentTool === 'pose') {
         // 绘制十字引导线，但不重绘画布以避免闪烁
         drawCrosshair(e);
     }
@@ -548,7 +721,7 @@ function handleMouseMove(e) {
 // 调整标注大小
 function resizeAnnotation(annotationId, handle, dx, dy) {
     const annotation = currentAnnotations.find(a => a.id === annotationId);
-    if (!annotation || annotation.type !== 'rectangle') return;
+    if (!annotation || (annotation.type !== 'rectangle' && annotation.type !== 'obb')) return;
     
     const points = annotation.points;
     if (points.length < 4) return;
@@ -608,12 +781,31 @@ function resizeAnnotation(annotationId, handle, dx, dy) {
 function moveAnnotation(annotationId, dx, dy) {
     const annotation = currentAnnotations.find(a => a.id === annotationId);
     if (!annotation) return;
-    
+
     // 更新所有点的坐标
-    annotation.points = annotation.points.map(point => [
-        point[0] + dx,
-        point[1] + dy
-    ]);
+    if (annotation.points) {
+        annotation.points = annotation.points.map(point => [
+            point[0] + dx,
+            point[1] + dy
+        ]);
+    }
+
+    // 姿态标注同时移动 bbox 和关键点
+    if (annotation.type === 'pose') {
+        if (annotation.bbox) {
+            annotation.bbox = annotation.bbox.map(point => [
+                point[0] + dx,
+                point[1] + dy
+            ]);
+        }
+        if (annotation.keypoints) {
+            annotation.keypoints = annotation.keypoints.map(kp => [
+                kp[0] + dx,
+                kp[1] + dy,
+                kp[2] !== undefined ? kp[2] : 2
+            ]);
+        }
+    }
 }
 
 // 处理鼠标抬起事件
@@ -650,7 +842,7 @@ function handleMouseUp(e) {
         const height = Math.abs(currentPoint.y - startPoint.y);
         const minX = Math.min(startPoint.x, currentPoint.x);
         const minY = Math.min(startPoint.y, currentPoint.y);
-        
+
         if (width > 5 && height > 5) { // 避免误触创建太小的矩形
             const selectedClass = getSelectedClass();
             if (selectedClass) {
@@ -670,6 +862,62 @@ function handleMouseUp(e) {
                 saveAnnotations();
                 updateAnnotationList();
             }
+        }
+        isDrawing = false;
+        startPoint = null;
+        currentPoint = null;
+        redrawCanvas();
+    }
+
+    // 处理旋转框绘制完成
+    if (isDrawing && startPoint && currentPoint && currentTool === 'obb') {
+        const width = Math.abs(currentPoint.x - startPoint.x);
+        const height = Math.abs(currentPoint.y - startPoint.y);
+        const minX = Math.min(startPoint.x, currentPoint.x);
+        const minY = Math.min(startPoint.y, currentPoint.y);
+
+        if (width > 5 && height > 5) {
+            const selectedClass = getSelectedClass();
+            if (selectedClass) {
+                pushUndoState();
+                const annotation = {
+                    id: Date.now(),
+                    class: selectedClass.name,
+                    points: [
+                        [minX, minY],
+                        [minX + width, minY],
+                        [minX + width, minY + height],
+                        [minX, minY + height]
+                    ],
+                    type: 'obb'
+                };
+                currentAnnotations.push(annotation);
+                saveAnnotations();
+                updateAnnotationList();
+            }
+        }
+        isDrawing = false;
+        startPoint = null;
+        currentPoint = null;
+        redrawCanvas();
+    }
+
+    // 处理姿态标注 bbox 绘制完成
+    if (isDrawing && startPoint && currentPoint && currentTool === 'pose' && poseStage === 'bbox') {
+        const width = Math.abs(currentPoint.x - startPoint.x);
+        const height = Math.abs(currentPoint.y - startPoint.y);
+        const minX = Math.min(startPoint.x, currentPoint.x);
+        const minY = Math.min(startPoint.y, currentPoint.y);
+
+        if (width > 5 && height > 5) {
+            poseStage = 'keypoints';
+            poseBbox = [
+                [minX, minY],
+                [minX + width, minY],
+                [minX + width, minY + height],
+                [minX, minY + height]
+            ];
+            showToast(' bbox 绘制完成，请点击放置关键点，按 Enter 完成');
         }
         isDrawing = false;
         startPoint = null;
@@ -785,7 +1033,7 @@ function drawImageAndAnnotations(ctx, img, container) {
     });
 
     // 绘制当前正在绘制的形状
-    if (isDrawing && startPoint && currentPoint && currentTool === 'rect') {
+    if (isDrawing && startPoint && currentPoint && (currentTool === 'rect' || currentTool === 'obb')) {
         // 设置绘制样式为实线
         ctx.strokeStyle = '#ff0000';
         ctx.lineWidth = 2;
@@ -804,6 +1052,52 @@ function drawImageAndAnnotations(ctx, img, container) {
             {x: startPoint.x * displayRatio + imgX, y: startPoint.y * displayRatio + imgY},
             {x: currentPoint.x * displayRatio + imgX, y: currentPoint.y * displayRatio + imgY}
         );
+    }
+
+    // 绘制姿态标注 bbox 预览
+    if (isDrawing && startPoint && currentPoint && currentTool === 'pose' && poseStage === 'bbox') {
+        ctx.strokeStyle = '#00aa00';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        const rectX = startPoint.x * displayRatio + imgX;
+        const rectY = startPoint.y * displayRatio + imgY;
+        const rectWidth = (currentPoint.x - startPoint.x) * displayRatio;
+        const rectHeight = (currentPoint.y - startPoint.y) * displayRatio;
+        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
+        ctx.setLineDash([]);
+    }
+
+    // 绘制姿态标注已放置的关键点
+    if (currentTool === 'pose' && poseStage === 'keypoints' && poseBbox) {
+        // 绘制 bbox 轮廓
+        ctx.strokeStyle = '#00aa00';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        for (let i = 0; i < poseBbox.length; i++) {
+            const px = poseBbox[i][0] * displayRatio + imgX;
+            const py = poseBbox[i][1] * displayRatio + imgY;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // 绘制已放置的关键点
+        poseKeypoints.forEach((kp, idx) => {
+            const kx = kp[0] * displayRatio + imgX;
+            const ky = kp[1] * displayRatio + imgY;
+            ctx.fillStyle = '#00ff00';
+            ctx.beginPath();
+            ctx.arc(kx, ky, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '10px Arial';
+            ctx.fillText(String(idx), kx + 6, ky - 6);
+        });
     }
 
     // 绘制多边形
@@ -885,44 +1179,99 @@ function drawAnnotations(ctx, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0) 
 
 // 绘制单个标注
 function drawAnnotation(ctx, annotation, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0) {
-    if (!annotation.points || annotation.points.length === 0) return;
-    
     const classInfo = classes.find(c => c.name === annotation.class);
     const color = classInfo ? classInfo.color : '#ff0000';
-    
+
     // 检查是否为选中状态
     const isSelected = annotation.id === selectedAnnotationId;
-    
+    ctx.strokeStyle = isSelected ? '#ff0000' : color;
+    ctx.lineWidth = isSelected ? 3 : 2;
+
+    // 分类标注：在左上角显示标签
+    if (annotation.type === 'classify') {
+        ctx.fillStyle = color + '20';
+        ctx.fillRect(offsetX + 5, offsetY + 5, 120, 28);
+        ctx.strokeRect(offsetX + 5, offsetY + 5, 120, 28);
+        ctx.fillStyle = isSelected ? '#ff0000' : color;
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText('[分类] ' + annotation.class, offsetX + 12, offsetY + 24);
+        return;
+    }
+
+    // 姿态标注：绘制 bbox + 关键点
+    if (annotation.type === 'pose') {
+        const bbox = annotation.bbox || annotation.points;
+        if (bbox && bbox.length >= 4) {
+            ctx.beginPath();
+            ctx.moveTo(bbox[0][0] * scaleX + offsetX, bbox[0][1] * scaleY + offsetY);
+            for (let i = 1; i < bbox.length; i++) {
+                ctx.lineTo(bbox[i][0] * scaleX + offsetX, bbox[i][1] * scaleY + offsetY);
+            }
+            ctx.closePath();
+            ctx.fillStyle = color + '20';
+            ctx.fill();
+            ctx.stroke();
+            const textX = bbox[0][0] * scaleX + offsetX;
+            const textY = bbox[0][1] * scaleY + offsetY - 5;
+            ctx.fillStyle = isSelected ? '#ff0000' : color;
+            ctx.font = '14px Arial';
+            ctx.fillText('[pose] ' + annotation.class, textX, textY);
+        }
+        // 绘制关键点
+        const keypoints = annotation.keypoints || [];
+        keypoints.forEach((kp, idx) => {
+            const kx = kp[0] * scaleX + offsetX;
+            const ky = kp[1] * scaleY + offsetY;
+            ctx.fillStyle = '#00ff00';
+            ctx.beginPath();
+            ctx.arc(kx, ky, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '10px Arial';
+            ctx.fillText(String(idx), kx + 6, ky - 6);
+        });
+        if (isSelected && bbox && bbox.length >= 4) {
+            drawResizeHandles(ctx, {points: bbox}, scaleX, scaleY, offsetX, offsetY);
+        }
+        return;
+    }
+
+    if (!annotation.points || annotation.points.length === 0) return;
+
     ctx.beginPath();
     ctx.moveTo(annotation.points[0][0] * scaleX + offsetX, annotation.points[0][1] * scaleY + offsetY);
-    
+
     for (let i = 1; i < annotation.points.length; i++) {
         ctx.lineTo(annotation.points[i][0] * scaleX + offsetX, annotation.points[i][1] * scaleY + offsetY);
     }
-    
-    if (annotation.type === 'rectangle' || annotation.points.length > 2) {
+
+    if (annotation.type === 'rectangle' || annotation.type === 'obb' || annotation.points.length > 2) {
         ctx.closePath();
         ctx.fillStyle = color + '40'; // 半透明填充
         ctx.fill();
     }
-    
+
     // 绘制边框
     ctx.strokeStyle = isSelected ? '#ff0000' : color;
     ctx.lineWidth = isSelected ? 3 : 2;
     ctx.stroke();
-    
+
     // 绘制标签名
     if (annotation.points.length > 0) {
         const textX = annotation.points[0][0] * scaleX + offsetX;
         const textY = annotation.points[0][1] * scaleY + offsetY - 5;
-        
+
         ctx.fillStyle = isSelected ? '#ff0000' : color;
         ctx.font = '14px Arial';
-        ctx.fillText(annotation.class, textX, textY);
+        const labelPrefix = annotation.type === 'obb' ? '[obb] ' : '';
+        ctx.fillText(labelPrefix + annotation.class, textX, textY);
     }
-    
+
     // 如果是选中状态，绘制控制点
-    if (isSelected && annotation.type === 'rectangle') {
+    if (isSelected && (annotation.type === 'rectangle' || annotation.type === 'obb')) {
         drawResizeHandles(ctx, annotation, scaleX, scaleY, offsetX, offsetY);
     }
 }
@@ -1327,9 +1676,17 @@ function updateAnnotationList() {
         const li = document.createElement('li');
         li.className = `annotation-item ${annotation.id === selectedAnnotationId ? 'selected' : ''}`;
         li.dataset.annotationId = annotation.id;
+        const typeLabels = {
+            rectangle: '',
+            polygon: '[分割] ',
+            obb: '[旋转框] ',
+            pose: '[姿态] ',
+            classify: '[分类] ',
+        };
+        const typeLabel = typeLabels[annotation.type] || '';
         li.innerHTML = `
             <div class="annotation-color" style="background-color: ${getClassColor(annotation.class)};"></div>
-            <span class="annotation-class">${annotation.class}</span>
+            <span class="annotation-class">${typeLabel}${annotation.class}</span>
             <div class="annotation-actions">
                 <button class="btn btn-small btn-danger delete-annotation-btn" data-index="${index}">
                     <i class="fas fa-trash"></i>
@@ -1539,10 +1896,209 @@ function showExportModal() {
     document.getElementById('exportModal').style.display = 'block';
 }
 
-// 检查YOLO11安装状态并更新UI
+// YOLO版本配置（按任务类型分组模型）
+const YOLO_ENV_CONFIG = {
+    yolo8: {
+        name: 'YOLOv8',
+        path: 'plugins/yolo8',
+        models: {
+            detect: [
+                { value: 'yolov8n', label: 'YOLOv8n (Nano)' },
+                { value: 'yolov8s', label: 'YOLOv8s (Small)' },
+                { value: 'yolov8m', label: 'YOLOv8m (Medium)' },
+                { value: 'yolov8l', label: 'YOLOv8l (Large)' },
+                { value: 'yolov8x', label: 'YOLOv8x (Extra Large)' },
+            ],
+            segment: [
+                { value: 'yolov8n-seg', label: 'YOLOv8n-seg (Nano)' },
+                { value: 'yolov8s-seg', label: 'YOLOv8s-seg (Small)' },
+                { value: 'yolov8m-seg', label: 'YOLOv8m-seg (Medium)' },
+                { value: 'yolov8l-seg', label: 'YOLOv8l-seg (Large)' },
+                { value: 'yolov8x-seg', label: 'YOLOv8x-seg (Extra Large)' },
+            ],
+            pose: [
+                { value: 'yolov8n-pose', label: 'YOLOv8n-pose (Nano)' },
+                { value: 'yolov8s-pose', label: 'YOLOv8s-pose (Small)' },
+                { value: 'yolov8m-pose', label: 'YOLOv8m-pose (Medium)' },
+                { value: 'yolov8l-pose', label: 'YOLOv8l-pose (Large)' },
+                { value: 'yolov8x-pose', label: 'YOLOv8x-pose (Extra Large)' },
+            ],
+            obb: [
+                { value: 'yolov8n-obb', label: 'YOLOv8n-obb (Nano)' },
+                { value: 'yolov8s-obb', label: 'YOLOv8s-obb (Small)' },
+                { value: 'yolov8m-obb', label: 'YOLOv8m-obb (Medium)' },
+                { value: 'yolov8l-obb', label: 'YOLOv8l-obb (Large)' },
+                { value: 'yolov8x-obb', label: 'YOLOv8x-obb (Extra Large)' },
+            ],
+            classify: [
+                { value: 'yolov8n-cls', label: 'YOLOv8n-cls (Nano)' },
+                { value: 'yolov8s-cls', label: 'YOLOv8s-cls (Small)' },
+                { value: 'yolov8m-cls', label: 'YOLOv8m-cls (Medium)' },
+                { value: 'yolov8l-cls', label: 'YOLOv8l-cls (Large)' },
+                { value: 'yolov8x-cls', label: 'YOLOv8x-cls (Extra Large)' },
+            ],
+        }
+    },
+    yolo11: {
+        name: 'YOLO11',
+        path: 'plugins/yolo11',
+        models: {
+            detect: [
+                { value: 'yolo11n', label: 'YOLO11n (Nano)' },
+                { value: 'yolo11s', label: 'YOLO11s (Small)' },
+                { value: 'yolo11m', label: 'YOLO11m (Medium)' },
+                { value: 'yolo11l', label: 'YOLO11l (Large)' },
+                { value: 'yolo11x', label: 'YOLO11x (Extra Large)' },
+            ],
+            segment: [
+                { value: 'yolo11n-seg', label: 'YOLO11n-seg (Nano)' },
+                { value: 'yolo11s-seg', label: 'YOLO11s-seg (Small)' },
+                { value: 'yolo11m-seg', label: 'YOLO11m-seg (Medium)' },
+                { value: 'yolo11l-seg', label: 'YOLO11l-seg (Large)' },
+                { value: 'yolo11x-seg', label: 'YOLO11x-seg (Extra Large)' },
+            ],
+            pose: [
+                { value: 'yolo11n-pose', label: 'YOLO11n-pose (Nano)' },
+                { value: 'yolo11s-pose', label: 'YOLO11s-pose (Small)' },
+                { value: 'yolo11m-pose', label: 'YOLO11m-pose (Medium)' },
+                { value: 'yolo11l-pose', label: 'YOLO11l-pose (Large)' },
+                { value: 'yolo11x-pose', label: 'YOLO11x-pose (Extra Large)' },
+            ],
+            obb: [
+                { value: 'yolo11n-obb', label: 'YOLO11n-obb (Nano)' },
+                { value: 'yolo11s-obb', label: 'YOLO11s-obb (Small)' },
+                { value: 'yolo11m-obb', label: 'YOLO11m-obb (Medium)' },
+                { value: 'yolo11l-obb', label: 'YOLO11l-obb (Large)' },
+                { value: 'yolo11x-obb', label: 'YOLO11x-obb (Extra Large)' },
+            ],
+            classify: [
+                { value: 'yolo11n-cls', label: 'YOLO11n-cls (Nano)' },
+                { value: 'yolo11s-cls', label: 'YOLO11s-cls (Small)' },
+                { value: 'yolo11m-cls', label: 'YOLO11m-cls (Medium)' },
+                { value: 'yolo11l-cls', label: 'YOLO11l-cls (Large)' },
+                { value: 'yolo11x-cls', label: 'YOLO11x-cls (Extra Large)' },
+            ],
+        }
+    },
+    yolo26: {
+        name: 'YOLO26',
+        path: 'plugins/yolo26',
+        models: {
+            detect: [
+                { value: 'yolo26n', label: 'YOLO26n (Nano)' },
+                { value: 'yolo26s', label: 'YOLO26s (Small)' },
+                { value: 'yolo26m', label: 'YOLO26m (Medium)' },
+                { value: 'yolo26l', label: 'YOLO26l (Large)' },
+                { value: 'yolo26x', label: 'YOLO26x (Extra Large)' },
+            ],
+            segment: [
+                { value: 'yolo26n-seg', label: 'YOLO26n-seg (Nano)' },
+                { value: 'yolo26s-seg', label: 'YOLO26s-seg (Small)' },
+                { value: 'yolo26m-seg', label: 'YOLO26m-seg (Medium)' },
+                { value: 'yolo26l-seg', label: 'YOLO26l-seg (Large)' },
+                { value: 'yolo26x-seg', label: 'YOLO26x-seg (Extra Large)' },
+            ],
+            pose: [
+                { value: 'yolo26n-pose', label: 'YOLO26n-pose (Nano)' },
+                { value: 'yolo26s-pose', label: 'YOLO26s-pose (Small)' },
+                { value: 'yolo26m-pose', label: 'YOLO26m-pose (Medium)' },
+                { value: 'yolo26l-pose', label: 'YOLO26l-pose (Large)' },
+                { value: 'yolo26x-pose', label: 'YOLO26x-pose (Extra Large)' },
+            ],
+            obb: [
+                { value: 'yolo26n-obb', label: 'YOLO26n-obb (Nano)' },
+                { value: 'yolo26s-obb', label: 'YOLO26s-obb (Small)' },
+                { value: 'yolo26m-obb', label: 'YOLO26m-obb (Medium)' },
+                { value: 'yolo26l-obb', label: 'YOLO26l-obb (Large)' },
+                { value: 'yolo26x-obb', label: 'YOLO26x-obb (Extra Large)' },
+            ],
+            classify: [
+                { value: 'yolo26n-cls', label: 'YOLO26n-cls (Nano)' },
+                { value: 'yolo26s-cls', label: 'YOLO26s-cls (Small)' },
+                { value: 'yolo26m-cls', label: 'YOLO26m-cls (Medium)' },
+                { value: 'yolo26l-cls', label: 'YOLO26l-cls (Large)' },
+                { value: 'yolo26x-cls', label: 'YOLO26x-cls (Extra Large)' },
+            ],
+        }
+    },
+};
+
+function getSelectedYoloVersion() {
+    const el = document.getElementById('yoloVersionSelect');
+    return el ? el.value : 'yolo11';
+}
+
+function getSelectedYoloConfig() {
+    return YOLO_ENV_CONFIG[getSelectedYoloVersion()] || YOLO_ENV_CONFIG.yolo11;
+}
+
+const TASK_TYPE_LABELS = {
+    detect: '目标检测',
+    segment: '实例分割',
+    pose: '姿态估计',
+    obb: '旋转框检测',
+    classify: '图像分类',
+};
+
+function updateYoloModelCheckboxes() {
+    const container = document.getElementById('yoloModelsCheckboxContainer');
+    if (!container) return;
+    const cfg = getSelectedYoloConfig();
+    container.innerHTML = '';
+    const taskOrder = ['detect', 'segment', 'pose', 'obb', 'classify'];
+    taskOrder.forEach(task => {
+        const models = cfg.models[task];
+        if (!models || models.length === 0) return;
+        const group = document.createElement('div');
+        group.style.width = '100%';
+        group.style.marginBottom = '10px';
+        const title = document.createElement('div');
+        title.style.fontWeight = 'bold';
+        title.style.fontSize = '0.95em';
+        title.style.color = '#495057';
+        title.style.marginBottom = '4px';
+        title.textContent = TASK_TYPE_LABELS[task] || task;
+        group.appendChild(title);
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.flexWrap = 'wrap';
+        row.style.gap = '10px';
+        models.forEach(m => {
+            const label = document.createElement('label');
+            label.style.display = 'flex';
+            label.style.alignItems = 'center';
+            label.style.gap = '5px';
+            label.style.fontSize = '0.9em';
+            const isChecked = task === 'detect' && m.label.includes('Nano') ? 'checked' : '';
+            label.innerHTML = `<input type="checkbox" name="yoloModels" value="${m.value}" ${isChecked}> ${m.label}`;
+            row.appendChild(label);
+        });
+        group.appendChild(row);
+        container.appendChild(group);
+    });
+    // 更新模型路径显示
+    const pathEl = document.getElementById('modelsPath');
+    if (pathEl) pathEl.textContent = cfg.path + '/models';
+}
+
+// 检查YOLO训练环境安装状态并更新UI
 function checkYolo11InstallStatus() {
-    // 发送请求检查YOLO11安装状态
-    fetch('/api/check-yolo11-install')
+    const version = getSelectedYoloVersion();
+    const cfg = getSelectedYoloConfig();
+
+    // 先显示获取中状态
+    const installInfoElement = document.getElementById('yolo11InstallInfo');
+    if (installInfoElement) {
+        installInfoElement.innerHTML = `
+            <p style="margin: 5px 0;"><strong>版本:</strong> ${cfg.name}</p>
+            <p style="margin: 5px 0;"><strong>ultralytics:</strong> 获取中...</p>
+            <p style="margin: 5px 0;"><strong>硬件支持:</strong> 获取中...</p>
+        `;
+        installInfoElement.style.display = 'block';
+    }
+
+    // 发送请求检查对应版本的安装状态
+    fetch('/api/check-ultralytics-install?version=' + encodeURIComponent(version))
         .then(response => response.json())
         .then(data => {
             const isInstalled = data.is_installed;
@@ -1553,19 +2109,22 @@ function checkYolo11InstallStatus() {
             const modelsContainer = document.getElementById('modelsContainer');
             const installBtn = document.getElementById('installYolo11Btn');
             const uninstallBtn = document.getElementById('uninstallYolo11Btn');
-            
+
             // 更新安装信息显示
             const installInfoElement = document.getElementById('yolo11InstallInfo');
             if (isInstalled) {
                 // 显示详细安装信息
-                const installTime = data.install_time || '未知';
-                const hardware = data.has_cuda ? 'CUDA (GPU)' : 'CPU';
+                const versionStr = data.version || '未知';
+                const hardware = data.gpus && data.gpus.length > 0
+                    ? `CUDA (GPU x${data.gpus.length})`
+                    : 'CPU';
                 installInfoElement.innerHTML = `
-                    <p style="margin: 5px 0;"><strong>安装时间:</strong> ${installTime}</p>
+                    <p style="margin: 5px 0;"><strong>版本:</strong> ${cfg.name}</p>
+                    <p style="margin: 5px 0;"><strong>ultralytics:</strong> ${versionStr}</p>
                     <p style="margin: 5px 0;"><strong>硬件支持:</strong> ${hardware}</p>
                 `;
                 installInfoElement.style.display = 'block';
-                
+
                 // 更新按钮状态
                 modelsSection.style.opacity = '1';
                 modelsSection.style.pointerEvents = 'auto';
@@ -1577,7 +2136,7 @@ function checkYolo11InstallStatus() {
                 // 隐藏安装信息
                 installInfoElement.innerHTML = '';
                 installInfoElement.style.display = 'none';
-                
+
                 // 更新按钮状态
                 modelsSection.style.opacity = '0.5';
                 modelsSection.style.pointerEvents = 'none';
@@ -1588,11 +2147,11 @@ function checkYolo11InstallStatus() {
             }
         })
         .catch(error => {
-            console.error('检查YOLO11安装状态失败:', error);
+            console.error('检查YOLO环境安装状态失败:', error);
         });
 }
 
-// 安装YOLO11
+// 安装YOLO训练环境
 function installYolo11() {
     const installBtn = document.getElementById('installYolo11Btn');
     const uninstallBtn = document.getElementById('uninstallYolo11Btn');
@@ -1601,43 +2160,46 @@ function installYolo11() {
     const progressElement = document.getElementById('yolo11InstallProgress');
     const progressBar = document.getElementById('yolo11ProgressBar');
     const progressPercent = document.getElementById('yolo11ProgressPercent');
-    const installPath = document.getElementById('yolo11InstallPath').value;
-    
+    const version = getSelectedYoloVersion();
+    const cfg = getSelectedYoloConfig();
+
+    if (!installBtn || !uninstallBtn || !statusElement || !statusText || !progressElement || !progressBar || !progressPercent) return;
+
     // 禁用按钮
     installBtn.disabled = true;
     uninstallBtn.disabled = true;
-    
+
     // 显示状态和进度
     statusElement.style.display = 'block';
-    statusText.textContent = '正在安装YOLO11...';
+    statusText.textContent = '正在安装 ' + cfg.name + '...';
     progressElement.style.display = 'block';
     progressBar.style.width = '0%';
     progressPercent.textContent = '0%';
-    
+
     // 使用EventSource实现服务器推送进度
-    const eventSource = new EventSource(`/api/install-yolo11?install_path=${encodeURIComponent(installPath)}`);
-    
+    const eventSource = new EventSource('/api/install-ultralytics?version=' + encodeURIComponent(version));
+
     eventSource.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
-            
+
             // 更新状态文本
             statusText.textContent = data.message;
-            
+
             // 更新进度条
             if (data.progress !== undefined) {
                 const progress = Math.min(100, Math.max(0, data.progress));
-                progressBar.style.width = `${progress}%`;
-                progressPercent.textContent = `${progress}%`;
+                progressBar.style.width = progress + '%';
+                progressPercent.textContent = progress + '%';
             }
-            
+
             // 检查是否安装完成
             if (data.status === 'completed') {
                 eventSource.close();
                 installBtn.disabled = true;
                 uninstallBtn.disabled = false;
-                statusText.textContent = 'YOLO11安装完成';
-                // 更新YOLO11安装状态
+                statusText.textContent = cfg.name + ' 安装完成';
+                // 更新安装状态
                 checkYolo11InstallStatus();
                 // 5秒后隐藏状态
                 setTimeout(() => {
@@ -1645,13 +2207,13 @@ function installYolo11() {
                     progressElement.style.display = 'none';
                 }, 5000);
             }
-            
+
             // 检查是否安装失败
             if (data.status === 'error') {
                 eventSource.close();
                 installBtn.disabled = false;
                 uninstallBtn.disabled = true;
-                statusText.textContent = `安装失败: ${data.error}`;
+                statusText.textContent = '安装失败: ' + data.message;
                 // 5秒后隐藏状态
                 setTimeout(() => {
                     statusElement.style.display = 'none';
@@ -1662,7 +2224,7 @@ function installYolo11() {
             console.error('解析安装进度失败:', error);
         }
     };
-    
+
     eventSource.onerror = function() {
         eventSource.close();
         installBtn.disabled = false;
@@ -1676,7 +2238,7 @@ function installYolo11() {
     };
 }
 
-// 卸载YOLO11
+// 卸载YOLO训练环境
 function uninstallYolo11() {
     const installBtn = document.getElementById('installYolo11Btn');
     const uninstallBtn = document.getElementById('uninstallYolo11Btn');
@@ -1685,48 +2247,50 @@ function uninstallYolo11() {
     const progressElement = document.getElementById('yolo11InstallProgress');
     const progressBar = document.getElementById('yolo11ProgressBar');
     const progressPercent = document.getElementById('yolo11ProgressPercent');
-    const installPath = document.getElementById('yolo11InstallPath').value;
-    
+    const cfg = getSelectedYoloConfig();
+
+    if (!installBtn || !uninstallBtn || !statusElement || !statusText || !progressElement || !progressBar || !progressPercent) return;
+
     // 确认卸载
-    if (!confirm('确定要卸载YOLO11吗？')) {
+    if (!confirm('确定要卸载 ' + cfg.name + ' 吗？')) {
         return;
     }
-    
+
     // 禁用按钮
     installBtn.disabled = true;
     uninstallBtn.disabled = true;
-    
+
     // 显示状态和进度
     statusElement.style.display = 'block';
-    statusText.textContent = '正在卸载YOLO11...';
+    statusText.textContent = '正在卸载 ' + cfg.name + '...';
     progressElement.style.display = 'block';
     progressBar.style.width = '0%';
     progressPercent.textContent = '0%';
-    
+
     // 使用EventSource实现服务器推送进度
-    const eventSource = new EventSource(`/api/uninstall-yolo11?install_path=${encodeURIComponent(installPath)}`);
-    
+    const eventSource = new EventSource('/api/uninstall-yolo11?install_path=' + encodeURIComponent(cfg.path));
+
     eventSource.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
-            
+
             // 更新状态文本
             statusText.textContent = data.message;
-            
+
             // 更新进度条
             if (data.progress !== undefined) {
                 const progress = Math.min(100, Math.max(0, data.progress));
-                progressBar.style.width = `${progress}%`;
-                progressPercent.textContent = `${progress}%`;
+                progressBar.style.width = progress + '%';
+                progressPercent.textContent = progress + '%';
             }
-            
+
             // 检查是否卸载完成
             if (data.status === 'completed') {
                 eventSource.close();
                 installBtn.disabled = false;
                 uninstallBtn.disabled = true;
-                statusText.textContent = 'YOLO11卸载完成';
-                // 更新YOLO11安装状态
+                statusText.textContent = cfg.name + ' 卸载完成';
+                // 更新安装状态
                 checkYolo11InstallStatus();
                 // 5秒后隐藏状态
                 setTimeout(() => {
@@ -1734,13 +2298,13 @@ function uninstallYolo11() {
                     progressElement.style.display = 'none';
                 }, 5000);
             }
-            
+
             // 检查是否卸载失败
             if (data.status === 'error') {
                 eventSource.close();
                 installBtn.disabled = true;
                 uninstallBtn.disabled = false;
-                statusText.textContent = `卸载失败: ${data.error}`;
+                statusText.textContent = '卸载失败: ' + data.message;
                 // 5秒后隐藏状态
                 setTimeout(() => {
                     statusElement.style.display = 'none';
@@ -1751,7 +2315,7 @@ function uninstallYolo11() {
             console.error('解析卸载进度失败:', error);
         }
     };
-    
+
     eventSource.onerror = function() {
         eventSource.close();
         installBtn.disabled = true;
@@ -1765,34 +2329,34 @@ function uninstallYolo11() {
     };
 }
 
-// 下载YOLO11预训练模型
+// 下载预训练模型
 function downloadModels() {
     // 获取选中的模型
-    const selectedModels = Array.from(document.querySelectorAll('input[name="yolo11Models"]:checked'))
+    const selectedModels = Array.from(document.querySelectorAll('input[name="yoloModels"]:checked'))
         .map(cb => cb.value);
-    
+
     if (selectedModels.length === 0) {
         showToast('请至少选择一个模型');
         return;
     }
-    
+
     // 获取安装路径
-    const installPath = document.getElementById('yolo11InstallPath').value;
-    
+    const installPath = getSelectedYoloConfig().path;
+
     // 显示状态
     const statusElement = document.getElementById('modelDownloadStatus');
     const statusText = document.getElementById('modelStatusText');
     statusElement.style.display = 'block';
-    statusText.textContent = `正在下载模型: ${selectedModels.join(', ')}...`;
-    
+    statusText.textContent = '正在下载模型: ' + selectedModels.join(', ') + '...';
+
     // 禁用下载按钮
     const downloadBtn = document.getElementById('downloadModelsBtn');
     const refreshBtn = document.getElementById('refreshModelsBtn');
     downloadBtn.disabled = true;
     refreshBtn.disabled = true;
-    
+
     // 使用EventSource实现服务器推送进度
-    const eventSource = new EventSource(`/api/download-models?models=${selectedModels.join(',')}&install_path=${encodeURIComponent(installPath)}`);
+    const eventSource = new EventSource('/api/download-models?models=' + selectedModels.join(',') + '&install_path=' + encodeURIComponent(installPath));
     
     eventSource.onmessage = function(event) {
         try {
@@ -1849,7 +2413,7 @@ function downloadModels() {
 // 刷新模型列表
 function refreshModels() {
     // 获取安装路径
-    const installPath = document.getElementById('yolo11InstallPath').value;
+    const installPath = getSelectedYoloConfig().path;
     
     // 显示加载状态
     const modelsList = document.getElementById('modelsList');
@@ -1892,14 +2456,14 @@ function deleteModel(modelName) {
     }
     
     // 获取安装路径
-    const installPath = document.getElementById('yolo11InstallPath').value;
-    
+    const installPath = getSelectedYoloConfig().path;
+
     // 显示状态
     const statusElement = document.getElementById('modelDownloadStatus');
     const statusText = document.getElementById('modelStatusText');
     statusElement.style.display = 'block';
-    statusText.textContent = `正在删除模型: ${modelName}...`;
-    
+    statusText.textContent = '正在删除模型: ' + modelName + '...';
+
     // 发送删除请求
     fetch('/api/delete-model', {
         method: 'POST',
@@ -1936,22 +2500,23 @@ function deleteModel(modelName) {
 // 设置模型拖放区域事件
 function setupModelDropZoneEvents() {
     const dropZone = document.getElementById('modelDropZone');
-    
+    if (!dropZone) return;
+
     // 阻止默认拖放行为
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         dropZone.addEventListener(eventName, preventDefaults, false);
     });
-    
+
     // 高亮拖放区域
     ['dragenter', 'dragover'].forEach(eventName => {
         dropZone.addEventListener(eventName, highlight, false);
     });
-    
+
     // 取消高亮拖放区域
     ['dragleave', 'drop'].forEach(eventName => {
         dropZone.addEventListener(eventName, unhighlight, false);
     });
-    
+
     // 处理文件拖放
     dropZone.addEventListener('drop', handleDrop, false);
 }
@@ -1988,8 +2553,8 @@ function handleDrop(e) {
     statusText.textContent = `正在上传模型文件...`;
     
     // 获取安装路径
-    const installPath = document.getElementById('yolo11InstallPath').value;
-    
+    const installPath = getSelectedYoloConfig().path;
+
     // 创建FormData对象
     const formData = new FormData();
     Array.from(files).forEach(file => {
@@ -2029,7 +2594,9 @@ function handleDrop(e) {
 // 显示设置模态框
 function showSettingsModal() {
     document.getElementById('settingsModal').style.display = 'block';
-    // 检查YOLO11安装状态并更新UI
+    // 初始化模型复选框
+    updateYoloModelCheckboxes();
+    // 检查YOLO环境安装状态并更新UI
     checkYolo11InstallStatus();
     // 刷新模型列表
     refreshModels();
@@ -2249,12 +2816,47 @@ function handleKeyDown(e) {
     
     // 下一张图片
     const nextShortcut = parseShortcut(shortcutSettings.nextImageShortcut);
-    if (e.ctrlKey === nextShortcut.ctrlKey && 
-        e.shiftKey === nextShortcut.shiftKey && 
-        e.altKey === nextShortcut.altKey && 
+    if (e.ctrlKey === nextShortcut.ctrlKey &&
+        e.shiftKey === nextShortcut.shiftKey &&
+        e.altKey === nextShortcut.altKey &&
         e.key.toLowerCase() === nextShortcut.key.toLowerCase()) {
         e.preventDefault();
         switchImage('next');
+    }
+
+    // 姿态标注：Enter 完成关键点放置
+    if (e.key === 'Enter' && currentTool === 'pose' && poseStage === 'keypoints' && poseBbox) {
+        e.preventDefault();
+        const selectedClass = getSelectedClass();
+        if (selectedClass && poseKeypoints.length > 0) {
+            pushUndoState();
+            const annotation = {
+                id: Date.now(),
+                class: selectedClass.name,
+                points: [],
+                bbox: poseBbox,
+                keypoints: poseKeypoints,
+                type: 'pose'
+            };
+            currentAnnotations.push(annotation);
+            saveAnnotations();
+            updateAnnotationList();
+            showToast('姿态标注已保存，关键点数: ' + poseKeypoints.length);
+        }
+        poseStage = 'bbox';
+        poseBbox = null;
+        poseKeypoints = [];
+        redrawCanvas();
+    }
+
+    // 姿态标注：Esc 取消当前绘制
+    if (e.key === 'Escape' && currentTool === 'pose' && poseStage === 'keypoints') {
+        e.preventDefault();
+        poseStage = 'bbox';
+        poseBbox = null;
+        poseKeypoints = [];
+        redrawCanvas();
+        showToast('已取消姿态标注');
     }
 }
 
@@ -2727,6 +3329,114 @@ window.addEventListener('beforeunload', function(e) {
     // 如果有未保存的更改，显示确认提示
     // 这里可以根据需要实现
 });
+
+// ==================== 模型下载弹窗（训练模型列表） ====================
+
+function openModelDownloadModal(projectName) {
+    document.getElementById('modelDownloadModal').style.display = 'block';
+    loadTrainedModels(projectName);
+}
+
+function closeModelDownloadModal() {
+    document.getElementById('modelDownloadModal').style.display = 'none';
+    document.getElementById('modelDownloadContent').innerHTML = '';
+}
+
+function loadTrainedModels(projectName) {
+    const content = document.getElementById('modelDownloadContent');
+    content.innerHTML = '<p style="text-align:center;color:#888;"><i class="fas fa-spinner fa-spin"></i> 加载中...</p>';
+    fetch('/api/train/model-info?project=' + encodeURIComponent(projectName))
+        .then(r => r.json())
+        .then(data => {
+            if (data.exists && data.versions && data.versions.length > 0) {
+                let html = '';
+                const taskLabels = { detect: '目标检测', segment: '实例分割', pose: '姿态估计', obb: '旋转框检测', classify: '图像分类' };
+                data.versions.forEach((v, idx) => {
+                    const info = v.info || {};
+                    const val = v.val_results || {};
+                    const isLatest = idx === 0;
+                    const trainedAt = info.trained_at ? new Date(info.trained_at).toLocaleString() : '-';
+                    const ds = info.dataset || {};
+                    html += '<div style="background:#f8f9fa;border-radius:6px;padding:12px;margin-bottom:10px;' + (isLatest ? 'border:2px solid #339af0;' : '') + '">';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+                    html += '<span style="font-weight:bold;">' + (isLatest ? '✅ ' : '') + '版本 ' + v.version + '</span>';
+                    html += '<span style="color:#888;font-size:0.85em;">' + trainedAt + '</span>';
+                    html += '</div>';
+                    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:0.85em;color:#555;margin-bottom:10px;">';
+                    html += '<span><strong>任务:</strong> ' + (taskLabels[info.task] || info.task || '-') + '</span>';
+                    html += '<span><strong>YOLO:</strong> ' + (info.yolo_version || '-') + '</span>';
+                    html += '<span><strong>基础模型:</strong> ' + (info.base_model || '-') + '</span>';
+                    html += '<span><strong>Epochs:</strong> ' + (info.epochs || '-') + '</span>';
+                    html += '<span><strong>训练集:</strong> ' + (ds.train_count !== undefined ? ds.train_count : '-') + '</span>';
+                    html += '<span><strong>验证集:</strong> ' + (ds.val_count !== undefined ? ds.val_count : '-') + '</span>';
+                    html += '<span><strong>类别数:</strong> ' + (ds.class_count !== undefined ? ds.class_count : '-') + '</span>';
+                    if (val['mAP50'] !== undefined) html += '<span><strong>mAP50:</strong> ' + val['mAP50'].toFixed(3) + '</span>';
+                    if (val['mAP50-95'] !== undefined) html += '<span><strong>mAP50-95:</strong> ' + val['mAP50-95'].toFixed(3) + '</span>';
+                    html += '</div>';
+                    html += '<div style="display:flex;gap:8px;">';
+                    html += '<button class="btn btn-success" style="font-size:0.85em;padding:4px 10px;" onclick="downloadTrainedModel(\'' + projectName + '\', \'' + v.version + '\')">';
+                    html += '<i class="fas fa-download"></i> 下载 .pt';
+                    html += '</button>';
+                    if (v.onnx_exists) {
+                        html += '<button class="btn btn-primary" style="font-size:0.85em;padding:4px 10px;" onclick="downloadTrainedOnnx(\'' + projectName + '\', \'' + v.version + '\')">';
+                        html += '<i class="fas fa-file-code"></i> 下载 ONNX';
+                        html += '</button>';
+                    } else {
+                        html += '<button class="btn btn-secondary" style="font-size:0.85em;padding:4px 10px;" onclick="exportTrainedOnnx(this, \'' + projectName + '\', \'' + v.version + '\')">';
+                        html += '<i class="fas fa-file-export"></i> 导出 ONNX';
+                        html += '</button>';
+                    }
+                    html += '</div>';
+                    html += '</div>';
+                });
+                content.innerHTML = html;
+            } else {
+                content.innerHTML = '<p style="text-align:center;color:#888;padding:20px;">该工程暂无训练完成的模型</p>';
+            }
+        })
+        .catch(() => {
+            content.innerHTML = '<p style="text-align:center;color:#888;padding:20px;">加载训练模型列表失败</p>';
+        });
+}
+
+function downloadTrainedModel(project, version) {
+    let url = '/api/train/download-model?project=' + encodeURIComponent(project);
+    if (version) url += '&version=' + encodeURIComponent(version);
+    window.location.href = url;
+}
+
+function downloadTrainedOnnx(project, version) {
+    let url = '/api/train/download-model?project=' + encodeURIComponent(project) + '&format=onnx';
+    if (version) url += '&version=' + encodeURIComponent(version);
+    window.location.href = url;
+}
+
+function exportTrainedOnnx(btn, project, version) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导出中...';
+    fetch('/api/train/export-onnx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: project, version: version })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('ONNX 导出成功');
+                // 刷新列表
+                openModelDownloadModal(project);
+            } else {
+                showToast('导出失败: ' + (data.error || '未知错误'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-file-export"></i> 导出 ONNX';
+            }
+        })
+        .catch(err => {
+            showToast('导出请求失败: ' + err.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-file-export"></i> 导出 ONNX';
+        });
+}
 
 // 绘制十字引导线 - 移除直接在主画布上绘制的逻辑，避免重影
 function drawCrosshair(e) {

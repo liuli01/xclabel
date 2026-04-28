@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python -m py_compile plugins/train_yolo.py)",
+      "Bash(python -c \"import app; print\\('app.py imported successfully'\\)\")"
+    ]
+  }
+}

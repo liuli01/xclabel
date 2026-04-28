@@ -1,7 +1,9 @@
-import requests
-import json
-import base64
 import argparse
+import base64
+import json
+
+import requests
+
 
 def test_lmstudio_api(image_path, model_api, api_key=None):
     """测试LMStudio API调用是否正确
@@ -17,33 +19,32 @@ def test_lmstudio_api(image_path, model_api, api_key=None):
     """
     print(f"测试图片: {image_path}")
     print(f"API地址: {model_api}")
-    
+
     # 构建请求头
     headers = {
         "Content-Type": "application/json"
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    
+
     # 确保API地址以正确的端点结尾
     api_endpoint = model_api
     if api_endpoint.endswith("/v1"):
         api_endpoint = f"{api_endpoint}/chat/completions"
     elif not api_endpoint.endswith("/chat/completions"):
         api_endpoint = f"{api_endpoint.rstrip('/')}/v1/chat/completions"
-    
+
     print(f"使用的API端点: {api_endpoint}")
-    
+
     # 读取图像并压缩，减少base64编码后的大小
     try:
         import cv2
-        import numpy as np
-        
+
         # 读取图像
         img = cv2.imread(image_path)
         if img is None:
             raise ValueError("无法读取图像")
-        
+
         # 压缩图像（调整大小）
         max_size = 640  # 最大边长
         h, w = img.shape[:2]
@@ -55,7 +56,7 @@ def test_lmstudio_api(image_path, model_api, api_key=None):
             print(f"✅ 图像已压缩，新尺寸: {new_w}x{new_h}")
         else:
             print(f"✅ 图像尺寸合适: {w}x{h}")
-        
+
         # 转换为JPEG格式，降低质量
         _, buffer = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
         image_base64 = base64.b64encode(buffer).decode("utf-8")
@@ -63,7 +64,7 @@ def test_lmstudio_api(image_path, model_api, api_key=None):
     except Exception as e:
         print(f"❌ 图像处理失败: {e}")
         return False, {}
-    
+
     # 构建请求体（简化提示词，减少token数量）
     payload = {
         "model": "qwen/qwen3-vl-8b",
@@ -89,25 +90,25 @@ def test_lmstudio_api(image_path, model_api, api_key=None):
             "type": "text"
         }
     }
-    
+
     # 发送请求
     try:
         print("📤 发送API请求...")
         response = requests.post(api_endpoint, headers=headers, json=payload)
         response.raise_for_status()
         print(f"✅ API请求成功，状态码: {response.status_code}")
-        
+
         # 解析响应
         result = response.json()
         print("📥 API响应:")
         print(json.dumps(result, indent=2, ensure_ascii=False))
-        
+
         # 提取检测结果
         if "choices" in result and len(result["choices"]) > 0:
             content = result["choices"][0]["message"]["content"]
-            print(f"\n📝 模型返回内容:")
+            print("\n📝 模型返回内容:")
             print(content)
-            
+
             # 解析JSON内容
             try:
                 # 去除Markdown格式标记
@@ -116,15 +117,15 @@ def test_lmstudio_api(image_path, model_api, api_key=None):
                 if content.endswith('```'):
                     content = content[:-3]  # 移除结尾的```
                 content = content.strip()  # 去除首尾空白
-                
+
                 detection_result = json.loads(content)
                 print("✅ 模型返回内容解析成功")
-                
+
                 # 验证检测结果格式
                 if "detections" in detection_result:
                     detections = detection_result["detections"]
                     print(f"🔍 检测到 {len(detections)} 个目标")
-                    
+
                     # 验证每个检测结果的格式
                     valid_detections = []
                     for i, det in enumerate(detections):
@@ -138,7 +139,7 @@ def test_lmstudio_api(image_path, model_api, api_key=None):
                                 print(f"   ❌ 目标 {i+1} 坐标格式无效: {bbox}")
                         else:
                             print(f"   ❌ 目标 {i+1} 格式无效: {det}")
-                    
+
                     if valid_detections:
                         print(f"\n✅ 共 {len(valid_detections)} 个有效检测结果")
                         return True, {"detections": valid_detections}
@@ -155,7 +156,7 @@ def test_lmstudio_api(image_path, model_api, api_key=None):
         else:
             print("❌ API响应缺少'choices'字段")
             return False, result
-            
+
     except requests.exceptions.RequestException as e:
         print(f"❌ API请求失败: {e}")
         print(f"   状态码: {e.response.status_code if hasattr(e, 'response') else 'N/A'}")
@@ -182,9 +183,9 @@ if __name__ == "__main__":
     print("=" * 60)
     print("LMStudio API 测试工具")
     print("=" * 60)
-    
+
     success, result = test_lmstudio_api(args.image, args.model_api, args.api_key)
-    
+
     print("=" * 60)
     if success:
         print("🎉 测试成功！API能够正确检测图片中的目标并返回坐标")

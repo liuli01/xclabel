@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xclabel - YOLO 模型训练</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='all.min.css') }}">
+    <style>
+        .train-page {
+            min-height: 100vh;
+            background-color: #f5f5f5;
+        }
+        .train-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 30px 20px;
+        }
+        .train-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .train-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+            color: #333;
+        }
+        .train-card {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+        }
+        .train-card h3 {
+            margin: 0 0 16px 0;
+            font-size: 1.1em;
+            color: #444;
+        }
+        .form-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .form-group {
+            flex: 1;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.95em;
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #339af0;
+        }
+        .form-group .error-msg {
+            color: #ef4444;
+            font-size: 0.85em;
+            margin-top: 4px;
+            display: none;
+        }
+        .form-group.has-error input,
+        .form-group.has-error select {
+            border-color: #ef4444;
+        }
+        .form-group.has-error .error-msg {
+            display: block;
+        }
+        .install-section {
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .install-section i {
+            font-size: 3em;
+            color: #ccc;
+            margin-bottom: 16px;
+        }
+        .progress-section {
+            display: none;
+        }
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 16px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #339af0;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .metric-card {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+        }
+        .metric-card .metric-value {
+            font-size: 1.4em;
+            font-weight: 600;
+            color: #333;
+        }
+        .metric-card .metric-label {
+            font-size: 0.85em;
+            color: #888;
+            margin-top: 4px;
+        }
+        .log-output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85em;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 16px;
+        }
+        .result-section {
+            display: none;
+        }
+        .result-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+        .result-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+        .gpu-warning {
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .dataset-info {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .dataset-info h4 {
+            margin: 0 0 12px 0;
+            font-size: 1em;
+            color: #444;
+        }
+        .dataset-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        .dataset-item {
+            text-align: center;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        .dataset-item .dataset-value {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+        }
+        .dataset-item .dataset-label {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 4px;
+        }
+        .dataset-item.highlight {
+            background: #e7f3ff;
+        }
+        .version-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .version-card {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 14px 16px;
+            border-left: 4px solid #339af0;
+        }
+        .version-card .version-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .version-card .version-title {
+            font-weight: 600;
+            font-size: 1em;
+            color: #333;
+        }
+        .version-card .version-time {
+            font-size: 0.8em;
+            color: #888;
+        }
+        .version-card .version-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px;
+            font-size: 0.85em;
+            color: #555;
+            margin-bottom: 10px;
+        }
+        .version-card .version-meta span {
+            display: block;
+        }
+        .version-card .version-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .version-card .version-actions button {
+            font-size: 0.85em;
+            padding: 5px 12px;
+        }
+        .version-card.latest {
+            border-left-color: #22c55e;
+            background: #f0fdf4;
+        }
+    </style>
+</head>
+<body>
+    <div class="train-page">
+        <header class="navbar">
+            <div class="logo">
+                <h1 onclick="window.location.href='/projects'" style="cursor: pointer;"><span class="x">x</span>clabel <span class="version">{{ version }}</span></h1>
+            </div>
+            <div class="nav-buttons">
+                <button id="backBtn" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> 返回工程
+                </button>
+            </div>
+        </header>
+
+        <div class="train-container">
+            <div class="train-header">
+                <h2><i class="fas fa-dumbbell"></i> YOLO 模型训练</h2>
+                <span id="projectNameDisplay" style="color: #666; font-size: 0.9em;"></span>
+            </div>
+
+            <!-- 配置加载中 -->
+            <div id="configLoading" class="train-card" style="text-align: center; padding: 40px;">
+                <i class="fas fa-spinner fa-spin" style="font-size: 2em; color: #2563eb; margin-bottom: 12px;"></i>
+                <p style="color: #666;">训练配置加载中...</p>
+            </div>
+
+            <!-- 环境安装引导 -->
+            <div id="installSection" class="train-card install-section" style="display: none;">
+                <i class="fas fa-download"></i>
+                <h3>训练环境未安装</h3>
+                <p style="color: #666; margin-bottom: 20px;">需要先安装 Ultralytics 训练环境才能开始训练</p>
+                <button id="installEnvBtn" class="btn btn-primary">
+                    <i class="fas fa-download"></i> 安装训练环境
+                </button>
+                <div id="installProgress" style="margin-top: 20px; display: none;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span id="installStatusText">准备安装...</span>
+                        <span id="installPercent">0%</span>
+                    </div>
+                    <div class="progress-bar-container" style="height: 6px;">
+                        <div id="installProgressBar" class="progress-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 训练配置表单 -->
+            <div id="configSection" class="train-card" style="display: none;">
+                <h3><i class="fas fa-cog"></i> 训练配置</h3>
+
+                <div id="gpuWarning" class="gpu-warning">
+                    <i class="fas fa-exclamation-triangle"></i> <span id="gpuWarningText"></span>
+                </div>
+
+                <div class="dataset-info" id="datasetInfoSection">
+                    <h4><i class="fas fa-database"></i> 数据集信息</h4>
+                    <div id="datasetLoading" style="color:#888;font-size:0.9em;padding:10px 0;"><i class="fas fa-spinner fa-spin"></i> 数据集加载中...</div>
+                    <div class="dataset-grid" id="datasetGrid" style="display:none;">
+                        <div class="dataset-item">
+                            <div class="dataset-value" id="datasetTotal">--</div>
+                            <div class="dataset-label">总图片</div>
+                        </div>
+                        <div class="dataset-item highlight">
+                            <div class="dataset-value" id="datasetAnnotated">--</div>
+                            <div class="dataset-label">已标注</div>
+                        </div>
+                        <div class="dataset-item">
+                            <div class="dataset-value" id="datasetClasses">--</div>
+                            <div class="dataset-label">类别数</div>
+                        </div>
+                        <div class="dataset-item highlight">
+                            <div class="dataset-value" id="datasetTrain">--</div>
+                            <div class="dataset-label">训练集</div>
+                        </div>
+                        <div class="dataset-item">
+                            <div class="dataset-value" id="datasetVal">--</div>
+                            <div class="dataset-label">验证集</div>
+                        </div>
+                        <div class="dataset-item">
+                            <div class="dataset-value" id="datasetTest">--</div>
+                            <div class="dataset-label">测试集</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="taskTypeSelect">任务类型</label>
+                        <select id="taskTypeSelect">
+                            <option value="detect" selected>目标检测 (detect)</option>
+                            <option value="segment">实例分割 (segment)</option>
+                            <option value="pose">姿态估计 (pose)</option>
+                            <option value="obb">旋转框检测 (obb)</option>
+                            <option value="classify">图像分类 (classify)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="yoloVersionSelect">YOLO 版本</label>
+                        <select id="yoloVersionSelect">
+                            <option value="yolo8">YOLOv8 (ultralytics==8.0.196)</option>
+                            <option value="yolo11" selected>YOLO11 (ultralytics==8.4.41)</option>
+                            <option value="yolo26">YOLO26 (ultralytics>=8.4.0)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modelSelect">模型类型</label>
+                        <select id="modelSelect">
+                            <option value="yolo11n.pt">YOLO11n (Nano)</option>
+                            <option value="yolo11s.pt">YOLO11s (Small)</option>
+                            <option value="yolo11m.pt">YOLO11m (Medium)</option>
+                            <option value="yolo11l.pt">YOLO11l (Large)</option>
+                            <option value="yolo11x.pt">YOLO11x (Extra Large)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="baseModelSelect">基础模型</label>
+                        <select id="baseModelSelect">
+                            <option value="official">官方预训练权重</option>
+                            <option value="project" id="projectModelOption">本工程已有模型</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="epochsInput">训练轮数 (epochs)</label>
+                        <input type="number" id="epochsInput" value="100" min="1" max="1000">
+                        <div class="error-msg">必须在 1-1000 之间</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="batchInput">批次大小 (batch)</label>
+                        <input type="number" id="batchInput" value="8" min="1" max="256">
+                        <div class="error-msg">必须在 1-256 之间</div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="imgszInput">图像尺寸 (imgsz)</label>
+                        <input type="number" id="imgszInput" value="640" min="32" max="2048" step="32">
+                        <div class="error-msg">必须在 32-2048 之间</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="deviceSelect">设备</label>
+                        <select id="deviceSelect">
+                            <option value="cpu">CPU</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="ratioInput">训练/验证比例: <span id="ratioValue">80</span>%</label>
+                        <input type="range" id="ratioInput" value="80" min="50" max="95" style="width: 100%;">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; margin-top: 20px;">
+                    <button id="startTrainBtn" class="btn btn-success" style="flex: 1;">
+                        <i class="fas fa-play"></i> 开始训练
+                    </button>
+                </div>
+            </div>
+
+            <!-- 训练进度 -->
+            <div id="progressSection" class="train-card progress-section">
+                <h3><i class="fas fa-spinner fa-spin"></i> 训练中...</h3>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span id="progressEpoch">Epoch 0/100</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="trainProgressBar" class="progress-bar" style="width: 0%;"></div>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="metricBoxLoss">--</div>
+                        <div class="metric-label">box_loss</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metricClsLoss">--</div>
+                        <div class="metric-label">cls_loss</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metricMap50">--</div>
+                        <div class="metric-label">mAP50</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metricMap50_95">--</div>
+                        <div class="metric-label">mAP50-95</div>
+                    </div>
+                </div>
+
+                <div class="log-output" id="logOutput"></div>
+
+                <div style="margin-top: 16px;">
+                    <button id="cancelTrainBtn" class="btn btn-danger">
+                        <i class="fas fa-stop"></i> 取消训练
+                    </button>
+                </div>
+            </div>
+
+            <!-- 训练结果 -->
+            <div id="resultSection" class="train-card result-section">
+                <div id="resultContent"></div>
+                <div class="metrics-grid" id="resultMetrics"></div>
+                <div id="resultDownloadArea" style="margin-top: 16px;"></div>
+                <button id="backToConfigBtn" class="btn btn-primary" style="margin-top: 16px;">
+                    <i class="fas fa-redo"></i> 返回配置
+                </button>
+            </div>
+
+            <!-- 已训练模型 -->
+            <div id="modelInfoSection" class="train-card" style="display: none;">
+                <h3><i class="fas fa-cube"></i> 模型版本</h3>
+                <div id="modelInfoContent" class="version-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const projectName = urlParams.get('project') || '';
+        document.getElementById('projectNameDisplay').textContent = projectName ? '工程: ' + projectName : '';
+
+        let currentProjectModelExists = false;
+        let currentDatasetInfo = null; // 缓存数据集信息，用于滑块联动
+
+        // 模型选项映射（按任务类型分组）
+        const MODEL_OPTIONS = {
+            yolo8: {
+                detect: [
+                    { value: 'yolov8n.pt', label: 'YOLOv8n (Nano)' },
+                    { value: 'yolov8s.pt', label: 'YOLOv8s (Small)' },
+                    { value: 'yolov8m.pt', label: 'YOLOv8m (Medium)' },
+                    { value: 'yolov8l.pt', label: 'YOLOv8l (Large)' },
+                    { value: 'yolov8x.pt', label: 'YOLOv8x (Extra Large)' },
+                ],
+                segment: [
+                    { value: 'yolov8n-seg.pt', label: 'YOLOv8n-seg (Nano)' },
+                    { value: 'yolov8s-seg.pt', label: 'YOLOv8s-seg (Small)' },
+                    { value: 'yolov8m-seg.pt', label: 'YOLOv8m-seg (Medium)' },
+                    { value: 'yolov8l-seg.pt', label: 'YOLOv8l-seg (Large)' },
+                    { value: 'yolov8x-seg.pt', label: 'YOLOv8x-seg (Extra Large)' },
+                ],
+                pose: [
+                    { value: 'yolov8n-pose.pt', label: 'YOLOv8n-pose (Nano)' },
+                    { value: 'yolov8s-pose.pt', label: 'YOLOv8s-pose (Small)' },
+                    { value: 'yolov8m-pose.pt', label: 'YOLOv8m-pose (Medium)' },
+                    { value: 'yolov8l-pose.pt', label: 'YOLOv8l-pose (Large)' },
+                    { value: 'yolov8x-pose.pt', label: 'YOLOv8x-pose (Extra Large)' },
+                ],
+                obb: [
+                    { value: 'yolov8n-obb.pt', label: 'YOLOv8n-obb (Nano)' },
+                    { value: 'yolov8s-obb.pt', label: 'YOLOv8s-obb (Small)' },
+                    { value: 'yolov8m-obb.pt', label: 'YOLOv8m-obb (Medium)' },
+                    { value: 'yolov8l-obb.pt', label: 'YOLOv8l-obb (Large)' },
+                    { value: 'yolov8x-obb.pt', label: 'YOLOv8x-obb (Extra Large)' },
+                ],
+                classify: [
+                    { value: 'yolov8n-cls.pt', label: 'YOLOv8n-cls (Nano)' },
+                    { value: 'yolov8s-cls.pt', label: 'YOLOv8s-cls (Small)' },
+                    { value: 'yolov8m-cls.pt', label: 'YOLOv8m-cls (Medium)' },
+                    { value: 'yolov8l-cls.pt', label: 'YOLOv8l-cls (Large)' },
+                    { value: 'yolov8x-cls.pt', label: 'YOLOv8x-cls (Extra Large)' },
+                ],
+            },
+            yolo11: {
+                detect: [
+                    { value: 'yolo11n.pt', label: 'YOLO11n (Nano)' },
+                    { value: 'yolo11s.pt', label: 'YOLO11s (Small)' },
+                    { value: 'yolo11m.pt', label: 'YOLO11m (Medium)' },
+                    { value: 'yolo11l.pt', label: 'YOLO11l (Large)' },
+                    { value: 'yolo11x.pt', label: 'YOLO11x (Extra Large)' },
+                ],
+                segment: [
+                    { value: 'yolo11n-seg.pt', label: 'YOLO11n-seg (Nano)' },
+                    { value: 'yolo11s-seg.pt', label: 'YOLO11s-seg (Small)' },
+                    { value: 'yolo11m-seg.pt', label: 'YOLO11m-seg (Medium)' },
+                    { value: 'yolo11l-seg.pt', label: 'YOLO11l-seg (Large)' },
+                    { value: 'yolo11x-seg.pt', label: 'YOLO11x-seg (Extra Large)' },
+                ],
+                pose: [
+                    { value: 'yolo11n-pose.pt', label: 'YOLO11n-pose (Nano)' },
+                    { value: 'yolo11s-pose.pt', label: 'YOLO11s-pose (Small)' },
+                    { value: 'yolo11m-pose.pt', label: 'YOLO11m-pose (Medium)' },
+                    { value: 'yolo11l-pose.pt', label: 'YOLO11l-pose (Large)' },
+                    { value: 'yolo11x-pose.pt', label: 'YOLO11x-pose (Extra Large)' },
+                ],
+                obb: [
+                    { value: 'yolo11n-obb.pt', label: 'YOLO11n-obb (Nano)' },
+                    { value: 'yolo11s-obb.pt', label: 'YOLO11s-obb (Small)' },
+                    { value: 'yolo11m-obb.pt', label: 'YOLO11m-obb (Medium)' },
+                    { value: 'yolo11l-obb.pt', label: 'YOLO11l-obb (Large)' },
+                    { value: 'yolo11x-obb.pt', label: 'YOLO11x-obb (Extra Large)' },
+                ],
+                classify: [
+                    { value: 'yolo11n-cls.pt', label: 'YOLO11n-cls (Nano)' },
+                    { value: 'yolo11s-cls.pt', label: 'YOLO11s-cls (Small)' },
+                    { value: 'yolo11m-cls.pt', label: 'YOLO11m-cls (Medium)' },
+                    { value: 'yolo11l-cls.pt', label: 'YOLO11l-cls (Large)' },
+                    { value: 'yolo11x-cls.pt', label: 'YOLO11x-cls (Extra Large)' },
+                ],
+            },
+            yolo26: {
+                detect: [
+                    { value: 'yolo26n.pt', label: 'YOLO26n (Nano)' },
+                    { value: 'yolo26s.pt', label: 'YOLO26s (Small)' },
+                    { value: 'yolo26m.pt', label: 'YOLO26m (Medium)' },
+                    { value: 'yolo26l.pt', label: 'YOLO26l (Large)' },
+                    { value: 'yolo26x.pt', label: 'YOLO26x (Extra Large)' },
+                ],
+                segment: [
+                    { value: 'yolo26n-seg.pt', label: 'YOLO26n-seg (Nano)' },
+                    { value: 'yolo26s-seg.pt', label: 'YOLO26s-seg (Small)' },
+                    { value: 'yolo26m-seg.pt', label: 'YOLO26m-seg (Medium)' },
+                    { value: 'yolo26l-seg.pt', label: 'YOLO26l-seg (Large)' },
+                    { value: 'yolo26x-seg.pt', label: 'YOLO26x-seg (Extra Large)' },
+                ],
+                pose: [
+                    { value: 'yolo26n-pose.pt', label: 'YOLO26n-pose (Nano)' },
+                    { value: 'yolo26s-pose.pt', label: 'YOLO26s-pose (Small)' },
+                    { value: 'yolo26m-pose.pt', label: 'YOLO26m-pose (Medium)' },
+                    { value: 'yolo26l-pose.pt', label: 'YOLO26l-pose (Large)' },
+                    { value: 'yolo26x-pose.pt', label: 'YOLO26x-pose (Extra Large)' },
+                ],
+                obb: [
+                    { value: 'yolo26n-obb.pt', label: 'YOLO26n-obb (Nano)' },
+                    { value: 'yolo26s-obb.pt', label: 'YOLO26s-obb (Small)' },
+                    { value: 'yolo26m-obb.pt', label: 'YOLO26m-obb (Medium)' },
+                    { value: 'yolo26l-obb.pt', label: 'YOLO26l-obb (Large)' },
+                    { value: 'yolo26x-obb.pt', label: 'YOLO26x-obb (Extra Large)' },
+                ],
+                classify: [
+                    { value: 'yolo26n-cls.pt', label: 'YOLO26n-cls (Nano)' },
+                    { value: 'yolo26s-cls.pt', label: 'YOLO26s-cls (Small)' },
+                    { value: 'yolo26m-cls.pt', label: 'YOLO26m-cls (Medium)' },
+                    { value: 'yolo26l-cls.pt', label: 'YOLO26l-cls (Large)' },
+                    { value: 'yolo26x-cls.pt', label: 'YOLO26x-cls (Extra Large)' },
+                ],
+            },
+        };
+
+        function updateModelOptions(version, task) {
+            const select = document.getElementById('modelSelect');
+            select.innerHTML = '';
+            const versionModels = MODEL_OPTIONS[version] || MODEL_OPTIONS.yolo11;
+            const options = versionModels[task] || versionModels.detect || [];
+            options.forEach(opt => {
+                const el = document.createElement('option');
+                el.value = opt.value;
+                el.textContent = opt.label;
+                select.appendChild(el);
+            });
+        }
+
+        function getSelectedTask() {
+            return document.getElementById('taskTypeSelect').value;
+        }
+
+        // 返回按钮
+        document.getElementById('backBtn').addEventListener('click', () => {
+            window.location.href = '/projects';
+        });
+
+        // 任务类型切换
+        document.getElementById('taskTypeSelect').addEventListener('change', function() {
+            updateModelOptions(getSelectedVersion(), this.value);
+            loadDatasetInfo();
+        });
+
+        // YOLO 版本切换
+        document.getElementById('yoloVersionSelect').addEventListener('change', function() {
+            updateModelOptions(this.value, getSelectedTask());
+            checkEnvironment();
+        });
+
+        // 比例滑块
+        document.getElementById('ratioInput').addEventListener('input', function() {
+            document.getElementById('ratioValue').textContent = this.value;
+            updateDatasetSplit();
+        });
+
+        // 页面加载时检查环境
+        document.addEventListener('DOMContentLoaded', function() {
+            updateModelOptions(getSelectedVersion(), getSelectedTask());
+            checkEnvironment();
+            loadDatasetInfo();
+        });
+
+        function getSelectedVersion() {
+            return document.getElementById('yoloVersionSelect').value;
+        }
+
+        function checkEnvironment() {
+            const version = getSelectedVersion();
+            document.getElementById('configLoading').style.display = 'block';
+            document.getElementById('installSection').style.display = 'none';
+            document.getElementById('configSection').style.display = 'none';
+            fetch('/api/check-ultralytics-install?version=' + encodeURIComponent(version))
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('configLoading').style.display = 'none';
+                    if (data.error) {
+                        showToast(data.error, 'error');
+                        return;
+                    }
+                    if (data.is_installed) {
+                        document.getElementById('installSection').style.display = 'none';
+                        document.getElementById('configSection').style.display = 'block';
+                        updateDeviceOptions(data.gpus || []);
+                        checkProjectModel();
+                        loadDatasetInfo();
+                    } else {
+                        document.getElementById('installSection').style.display = 'block';
+                        document.getElementById('configSection').style.display = 'none';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('configLoading').style.display = 'none';
+                });
+        }
+
+        function loadDatasetInfo() {
+            if (!projectName) return;
+            const loadingEl = document.getElementById('datasetLoading');
+            const gridEl = document.getElementById('datasetGrid');
+            const infoSection = document.getElementById('datasetInfoSection');
+            loadingEl.style.display = 'block';
+            gridEl.style.display = 'none';
+            infoSection.style.display = 'block';
+            const ratio = parseInt(document.getElementById('ratioInput').value) / 100;
+            const task = getSelectedTask();
+            fetch('/api/train/dataset-info?project=' + encodeURIComponent(projectName) + '&ratio=' + ratio + '&task=' + encodeURIComponent(task))
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        loadingEl.style.display = 'none';
+                        gridEl.style.display = 'none';
+                        infoSection.style.display = 'none';
+                        return;
+                    }
+                    currentDatasetInfo = data;
+                    loadingEl.style.display = 'none';
+                    gridEl.style.display = 'grid';
+                    document.getElementById('datasetTotal').textContent = data.total_images;
+                    document.getElementById('datasetAnnotated').textContent = data.annotated_images;
+                    document.getElementById('datasetClasses').textContent = data.class_count;
+                    document.getElementById('datasetTrain').textContent = data.train_count;
+                    document.getElementById('datasetVal').textContent = data.val_count;
+                    document.getElementById('datasetTest').textContent = data.test_count;
+                })
+                .catch(() => {
+                    loadingEl.style.display = 'none';
+                    gridEl.style.display = 'none';
+                    infoSection.style.display = 'none';
+                });
+        }
+
+        function updateDatasetSplit() {
+            if (!currentDatasetInfo) return;
+            const ratio = parseInt(document.getElementById('ratioInput').value) / 100;
+            const annotated = currentDatasetInfo.annotated_images;
+            const trainCount = Math.floor(annotated * ratio);
+            const valCount = annotated - trainCount;
+            document.getElementById('datasetTrain').textContent = trainCount;
+            document.getElementById('datasetVal').textContent = valCount;
+        }
+
+        function updateDeviceOptions(gpus) {
+            const select = document.getElementById('deviceSelect');
+            select.innerHTML = '';
+            if (gpus.length > 0) {
+                gpus.forEach(gpu => {
+                    const opt = document.createElement('option');
+                    opt.value = String(gpu.id);
+                    opt.textContent = 'GPU ' + gpu.id + ' (' + gpu.name + ')';
+                    select.appendChild(opt);
+                });
+            }
+            const cpuOpt = document.createElement('option');
+            cpuOpt.value = 'cpu';
+            cpuOpt.textContent = 'CPU';
+            select.appendChild(cpuOpt);
+        }
+
+        function checkProjectModel() {
+            if (!projectName) return;
+            // 简单通过 URL 推断，实际模型存在性由后端启动时校验
+            // 这里仅做前端 UI 预检，真正的存在性检查放在 /api/train/start
+        }
+
+        // 安装环境
+        document.getElementById('installEnvBtn').addEventListener('click', function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 安装中...';
+            document.getElementById('installProgress').style.display = 'block';
+
+            const version = getSelectedVersion();
+            const eventSource = new EventSource('/api/install-ultralytics?version=' + encodeURIComponent(version));
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    document.getElementById('installStatusText').textContent = data.message || '';
+                    document.getElementById('installPercent').textContent = (data.progress || 0) + '%';
+                    document.getElementById('installProgressBar').style.width = (data.progress || 0) + '%';
+
+                    if (data.status === 'completed') {
+                        eventSource.close();
+                        showToast('安装完成');
+                        setTimeout(checkEnvironment, 500);
+                    } else if (data.status === 'error') {
+                        eventSource.close();
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-download"></i> 安装训练环境';
+                        showToast(data.message || '安装失败', 'error');
+                    }
+                } catch (e) {}
+            };
+            eventSource.onerror = function() {
+                eventSource.close();
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-download"></i> 安装训练环境';
+                showToast('安装过程出错', 'error');
+            };
+        });
+
+        // SocketIO 连接
+        const socket = io();
+        socket.on('train_progress', function(data) {
+            if (data.status === 'running') {
+                updateProgress(data.progress);
+                updateVersionProgress(data.progress);
+                if (data.message) {
+                    appendLog(data.message);
+                }
+            } else if (data.status === 'completed') {
+                showResult(true, data.result, data.elapsed);
+                loadModelInfo();
+            } else if (data.status === 'error') {
+                showResult(false, null, 0, data.error);
+                loadModelInfo();
+            } else if (data.status === 'stopped') {
+                showResult(false, null, 0, '训练已取消');
+                loadModelInfo();
+            }
+        });
+
+        function updateVersionProgress(progress) {
+            const badge = document.getElementById('trainingBadge');
+            if (!badge) return;
+            const current = progress.epoch || 0;
+            const total = progress.total_epochs || 0;
+            const pct = progress.percentage || 0;
+            badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 训练中 Epoch ' + current + '/' + total + ' (' + pct + '%)';
+        }
+
+        function updateProgress(progress) {
+            const current = progress.epoch || 0;
+            const total = progress.total_epochs || 100;
+            const pct = progress.percentage || 0;
+            document.getElementById('progressEpoch').textContent = 'Epoch ' + current + '/' + total;
+            document.getElementById('progressPercent').textContent = pct + '%';
+            document.getElementById('trainProgressBar').style.width = pct + '%';
+
+            if (progress.box_loss !== undefined) {
+                document.getElementById('metricBoxLoss').textContent = progress.box_loss.toFixed(4);
+            }
+            if (progress.cls_loss !== undefined) {
+                document.getElementById('metricClsLoss').textContent = progress.cls_loss.toFixed(4);
+            }
+            if (progress.mAP50 !== undefined) {
+                document.getElementById('metricMap50').textContent = progress.mAP50.toFixed(3);
+            }
+            if (progress.mAP50_95 !== undefined) {
+                document.getElementById('metricMap50_95').textContent = progress.mAP50_95.toFixed(3);
+            }
+        }
+
+        function appendLog(msg) {
+            const log = document.getElementById('logOutput');
+            log.textContent += msg + '\n';
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // 参数校验
+        function validateForm() {
+            let valid = true;
+            const epochs = parseInt(document.getElementById('epochsInput').value);
+            const batch = parseInt(document.getElementById('batchInput').value);
+            const imgsz = parseInt(document.getElementById('imgszInput').value);
+
+            const eg = document.getElementById('epochsInput').closest('.form-group');
+            if (epochs < 1 || epochs > 1000) { eg.classList.add('has-error'); valid = false; }
+            else { eg.classList.remove('has-error'); }
+
+            const bg = document.getElementById('batchInput').closest('.form-group');
+            if (batch < 1 || batch > 256) { bg.classList.add('has-error'); valid = false; }
+            else { bg.classList.remove('has-error'); }
+
+            const ig = document.getElementById('imgszInput').closest('.form-group');
+            if (imgsz < 32 || imgsz > 2048) { ig.classList.add('has-error'); valid = false; }
+            else { ig.classList.remove('has-error'); }
+
+            return valid;
+        }
+
+        // 开始训练
+        document.getElementById('startTrainBtn').addEventListener('click', function() {
+            if (!validateForm()) return;
+
+            const btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 启动中...';
+
+            const params = {
+                project: projectName,
+                yolo_version: getSelectedVersion(),
+                task: getSelectedTask(),
+                model: document.getElementById('modelSelect').value,
+                epochs: parseInt(document.getElementById('epochsInput').value),
+                batch: parseInt(document.getElementById('batchInput').value),
+                imgsz: parseInt(document.getElementById('imgszInput').value),
+                device: document.getElementById('deviceSelect').value,
+                train_val_ratio: parseInt(document.getElementById('ratioInput').value) / 100,
+                use_project_model: document.getElementById('baseModelSelect').value === 'project',
+            };
+
+            fetch('/api/train/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-play"></i> 开始训练';
+                if (data.error) {
+                    showToast(data.error, 'error');
+                    return;
+                }
+                // 切换到进度视图
+                document.getElementById('configSection').style.display = 'none';
+                document.getElementById('progressSection').style.display = 'block';
+                document.getElementById('resultSection').style.display = 'none';
+                document.getElementById('logOutput').textContent = '';
+                resetMetrics(params.epochs);
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-play"></i> 开始训练';
+                showToast('启动失败: ' + err.message, 'error');
+            });
+        });
+
+        // 取消训练
+        document.getElementById('cancelTrainBtn').addEventListener('click', function() {
+            if (!confirm('确定要取消当前训练任务吗？')) return;
+            fetch('/api/train/cancel', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        showToast(data.error, 'error');
+                    } else {
+                        showToast('训练已取消');
+                    }
+                });
+        });
+
+        // 返回配置
+        document.getElementById('backToConfigBtn').addEventListener('click', function() {
+            document.getElementById('configSection').style.display = 'block';
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('resultSection').style.display = 'none';
+        });
+
+        function resetMetrics(totalEpochs) {
+            totalEpochs = totalEpochs || 100;
+            document.getElementById('metricBoxLoss').textContent = '--';
+            document.getElementById('metricClsLoss').textContent = '--';
+            document.getElementById('metricMap50').textContent = '--';
+            document.getElementById('metricMap50_95').textContent = '--';
+            document.getElementById('progressEpoch').textContent = 'Epoch 0/' + totalEpochs;
+            document.getElementById('progressPercent').textContent = '0%';
+            document.getElementById('trainProgressBar').style.width = '0%';
+        }
+
+        function showResult(success, result, elapsed, errorMsg) {
+            document.getElementById('configSection').style.display = 'none';
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('resultSection').style.display = 'block';
+
+            const content = document.getElementById('resultContent');
+            const metrics = document.getElementById('resultMetrics');
+
+            if (success) {
+                let html = '<div class="result-success"><i class="fas fa-check-circle"></i> <strong>训练完成！</strong>';
+                if (elapsed) html += '<br>总耗时: ' + formatTime(elapsed);
+                html += '</div>';
+                content.innerHTML = html;
+
+                let mHtml = '';
+                if (result) {
+                    if (result['mAP50'] !== undefined) {
+                        mHtml += '<div class="metric-card"><div class="metric-value">' + result['mAP50'].toFixed(3) + '</div><div class="metric-label">mAP50</div></div>';
+                    }
+                    if (result['mAP50-95'] !== undefined) {
+                        mHtml += '<div class="metric-card"><div class="metric-value">' + result['mAP50-95'].toFixed(3) + '</div><div class="metric-label">mAP50-95</div></div>';
+                    }
+                    if (result['precision'] !== undefined) {
+                        mHtml += '<div class="metric-card"><div class="metric-value">' + result['precision'].toFixed(3) + '</div><div class="metric-label">Precision</div></div>';
+                    }
+                    if (result['recall'] !== undefined) {
+                        mHtml += '<div class="metric-card"><div class="metric-value">' + result['recall'].toFixed(3) + '</div><div class="metric-label">Recall</div></div>';
+                    }
+                }
+                metrics.innerHTML = mHtml;
+
+                // 显示下载按钮（下载最新版本）
+                const dlArea = document.getElementById('resultDownloadArea');
+                dlArea.innerHTML = '<button class="btn btn-success" onclick="downloadModel()"><i class="fas fa-download"></i> 下载模型</button>';
+                // 刷新版本列表
+                loadModelInfo();
+            } else {
+                content.innerHTML = '<div class="result-error"><i class="fas fa-times-circle"></i> <strong>训练失败</strong><br>' + (errorMsg || '未知错误') + '</div>';
+                metrics.innerHTML = '';
+                document.getElementById('resultDownloadArea').innerHTML = '';
+            }
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            if (m > 0) return m + '分' + s + '秒';
+            return s + '秒';
+        }
+
+        function loadModelInfo() {
+            if (!projectName) return;
+            fetch('/api/train/model-info?project=' + encodeURIComponent(projectName))
+                .then(r => r.json())
+                .then(data => {
+                    const section = document.getElementById('modelInfoSection');
+                    const content = document.getElementById('modelInfoContent');
+                    if (data.exists && data.versions && data.versions.length > 0) {
+                        section.style.display = 'block';
+                        let html = '';
+                        data.versions.forEach((v, idx) => {
+                            const info = v.info || {};
+                            const val = v.val_results || {};
+                            const isLatest = idx === 0;
+                            const trainedAt = info.trained_at ? new Date(info.trained_at).toLocaleString() : '-';
+                            const ds = info.dataset || {};
+                            html += '<div class="version-card ' + (isLatest ? 'latest' : '') + '">';
+                            html += '  <div class="version-header">';
+                            let trainingBadge = '';
+                            if (v.is_training && v.train_progress) {
+                                const tp = v.train_progress;
+                                const ep = tp.epoch || 0;
+                                const tot = tp.total_epochs || 0;
+                                const pct = tp.percentage || 0;
+                                trainingBadge = ' <span id="trainingBadge" style="color:#339af0;font-size:0.85em;"><i class="fas fa-spinner fa-spin"></i> 训练中 Epoch ' + ep + '/' + tot + ' (' + pct + '%)</span>';
+                            } else if (v.is_training) {
+                                trainingBadge = ' <span id="trainingBadge" style="color:#339af0;font-size:0.85em;"><i class="fas fa-spinner fa-spin"></i> 训练中</span>';
+                            } else if (v.status === 'error' || v.status === 'stopped') {
+                                trainingBadge = ' <span style="color:#fa5252;font-size:0.85em;"><i class="fas fa-times-circle"></i> 训练失败</span>';
+                            }
+                            html += '    <span class="version-title">' + (isLatest ? '✅ ' : '') + '版本 ' + v.version + trainingBadge + '</span>';
+                            html += '    <span class="version-time">' + trainedAt + '</span>';
+                            html += '  </div>';
+                            const taskLabels = { detect: '目标检测', segment: '实例分割', pose: '姿态估计', obb: '旋转框检测', classify: '图像分类' };
+                            html += '  <div class="version-meta">';
+                            html += '    <span><strong>任务:</strong> ' + (taskLabels[info.task] || info.task || '-') + '</span>';
+                            html += '    <span><strong>YOLO:</strong> ' + (info.yolo_version || '-') + '</span>';
+                            html += '    <span><strong>基础模型:</strong> ' + (info.base_model || '-') + '</span>';
+                            html += '    <span><strong>Epochs:</strong> ' + (info.epochs || '-') + '</span>';
+                            html += '    <span><strong>训练集:</strong> ' + (ds.train_count !== undefined ? ds.train_count : '-') + '</span>';
+                            html += '    <span><strong>验证集:</strong> ' + (ds.val_count !== undefined ? ds.val_count : '-') + '</span>';
+                            html += '    <span><strong>类别数:</strong> ' + (ds.class_count !== undefined ? ds.class_count : '-') + '</span>';
+                            if (val['mAP50'] !== undefined) {
+                                html += '    <span><strong>mAP50:</strong> ' + val['mAP50'].toFixed(3) + '</span>';
+                            }
+                            if (val['mAP50-95'] !== undefined) {
+                                html += '    <span><strong>mAP50-95:</strong> ' + val['mAP50-95'].toFixed(3) + '</span>';
+                            }
+                            html += '  </div>';
+                            const testDisabled = v.is_training || v.status === 'error' || v.status === 'stopped';
+                            html += '  <div class="version-actions">';
+                            html += '    <button class="btn btn-info" onclick="testModelVersion(\'' + v.version + '\')"' + (testDisabled ? ' disabled' : '') + '>';
+                            html += '      <i class="fas fa-vial"></i> 模型测试';
+                            html += '    </button>';
+                            html += '    <button class="btn btn-success" onclick="downloadModel(\'' + v.version + '\')"' + (testDisabled ? ' disabled' : '') + '>';
+                            html += '      <i class="fas fa-download"></i> 下载 .pt';
+                            html += '    </button>';
+                            if (v.onnx_exists) {
+                                html += '    <button class="btn btn-primary" onclick="downloadOnnx(\'' + v.version + '\')"' + (testDisabled ? ' disabled' : '') + '>';
+                                html += '      <i class="fas fa-file-code"></i> 下载 ONNX';
+                                html += '    </button>';
+                            } else {
+                                html += '    <button class="btn btn-secondary" onclick="exportOnnx(this, \'' + v.version + '\')"' + (testDisabled ? ' disabled' : '') + '>';
+                                html += '      <i class="fas fa-file-export"></i> 导出 ONNX';
+                                html += '    </button>';
+                            }
+                            html += '    <button class="btn btn-danger" onclick="deleteModelVersion(\'' + v.version + '\')"' + (v.is_training ? ' disabled' : '') + '>';
+                            html += '      <i class="fas fa-trash"></i> 删除';
+                            html += '    </button>';
+                            html += '  </div>';
+                            html += '</div>';
+                        });
+                        content.innerHTML = html;
+                    } else {
+                        section.style.display = 'none';
+                        content.innerHTML = '';
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function downloadModel(version) {
+            if (!projectName) return;
+            let url = '/api/train/download-model?project=' + encodeURIComponent(projectName);
+            if (version) url += '&version=' + encodeURIComponent(version);
+            window.location.href = url;
+        }
+
+        function downloadOnnx(version) {
+            if (!projectName) return;
+            let url = '/api/train/download-model?project=' + encodeURIComponent(projectName) + '&format=onnx';
+            if (version) url += '&version=' + encodeURIComponent(version);
+            window.location.href = url;
+        }
+
+        function testModelVersion(version) {
+            if (!projectName) return;
+            window.open('/model-test?project=' + encodeURIComponent(projectName) + '&version=' + encodeURIComponent(version), '_blank');
+        }
+
+        function exportOnnx(btn, version) {
+            if (!projectName) return;
+            btn.disabled = true;
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导出中...';
+            fetch('/api/train/export-onnx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: projectName, version: version })
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                if (data.success) {
+                    showToast('ONNX 导出成功');
+                    loadModelInfo();
+                } else {
+                    btn.innerHTML = originalHtml;
+                    showToast(data.error || '导出失败', 'error');
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                showToast('导出失败: ' + err.message, 'error');
+            });
+        }
+
+        function deleteModelVersion(version) {
+            if (!projectName) return;
+            if (!confirm('确定要删除版本 ' + version + ' 吗？此操作不可恢复。')) return;
+            fetch('/api/train/delete-version', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: projectName, version: version })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message);
+                    loadModelInfo();
+                } else {
+                    showToast(data.error || '删除失败', 'error');
+                }
+            })
+            .catch(err => {
+                showToast('删除失败: ' + err.message, 'error');
+            });
+        }
+
+        // 页面加载时获取模型信息
+        loadModelInfo();
+
+        function showToast(message, type) {
+            const toast = document.createElement('div');
+            toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:' + (type === 'error' ? '#ef4444' : '#22c55e') + ';color:white;padding:10px 20px;border-radius:4px;z-index:2000;font-size:13px;white-space:nowrap;';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2500);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型测试 - xclabel</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+        .header { background: #fff; padding: 15px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 15px; }
+        .header h1 { font-size: 1.3em; }
+        .header .btn { padding: 6px 14px; border-radius: 4px; border: none; cursor: pointer; font-size: 0.9em; text-decoration: none; }
+        .container { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
+        .section { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .section h2 { font-size: 1.1em; margin-bottom: 15px; color: #444; }
+        .btn { padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 0.9em; display: inline-flex; align-items: center; gap: 5px; }
+        .btn-primary { background: #339af0; color: #fff; }
+        .btn-success { background: #40c057; color: #fff; }
+        .btn-secondary { background: #868e96; color: #fff; }
+        .test-workspace { display: none; }
+        .test-workspace.active { display: block; }
+        .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+        .form-group { flex: 1; min-width: 120px; }
+        .form-group label { display: block; margin-bottom: 4px; font-size: 0.9em; color: #555; }
+        select, input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.95em; }
+        .thumbnails { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+        .thumb { width: 80px; height: 80px; border: 2px solid #ddd; border-radius: 4px; overflow: hidden; cursor: pointer; position: relative; }
+        .thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .thumb.active { border-color: #339af0; }
+        .upload-zone { border: 2px dashed #ced4da; border-radius: 4px; padding: 15px; text-align: center; background: #f8f9fa; position: relative; overflow: hidden; min-height: 60px; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .upload-zone input[type="file"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
+        .result-wrapper { display: flex; gap: 15px; }
+        .result-area { position: relative; border: 1px solid #e9ecef; border-radius: 4px; background: #f8f9fa; min-height: 300px; flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; }
+        .result-area canvas { display: block; max-width: 100%; }
+        .result-json { width: 380px; min-width: 300px; border: 1px solid #e9ecef; border-radius: 4px; background: #fff; display: none; flex-direction: column; }
+        .result-json.active { display: flex; }
+        .result-json .json-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; font-size: 0.9em; font-weight: 600; }
+        .result-json pre { flex: 1; margin: 0; padding: 12px; overflow: auto; font-size: 0.8em; line-height: 1.5; background: #fafafa; color: #333; max-height: 500px; }
+        .placeholder { text-align: center; color: #888; padding: 40px; }
+        .loading { display: none; color: #666; }
+        .toast { position: fixed; top: 20px; right: 20px; background: #333; color: #fff; padding: 10px 20px; border-radius: 4px; display: none; z-index: 10000; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="/projects" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> 返回</a>
+        <h1><i class="fas fa-vial"></i> 模型测试 - <span id="projectName"></span></h1>
+    </div>
+
+    <div class="container">
+        <!-- 测试工作区 -->
+        <div class="section test-workspace" id="testWorkspace">
+            <h2>测试模型：<span id="testModelName"></span></h2>
+            <button class="btn btn-secondary" id="backToTrainBtn" style="margin-bottom: 15px;"><i class="fas fa-arrow-left"></i> 返回模型训练</button>
+
+            <div class="form-row">
+                <div class="form-group" style="flex: 2;">
+                    <label>测试图片</label>
+                    <div class="thumbnails" id="testThumbnails"></div>
+                    <div class="upload-zone" id="uploadZone">
+                        <i class="fas fa-cloud-upload-alt" style="font-size: 1.5em; color: #6c757d; margin-bottom: 6px;"></i>
+                        <p style="color: #6c757d; font-size: 0.9em;">点击或拖拽上传自定义图片</p>
+                        <input type="file" id="imageInput" accept="image/*">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px; flex-wrap: wrap;">
+                <button class="btn btn-primary" id="inferBtn"><i class="fas fa-play"></i> 开始推理</button>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" id="showAnnotations" checked> 显示标注
+                </label>
+                <span id="inferLoading" class="loading"><i class="fas fa-spinner fa-spin"></i> 正在推理...</span>
+            </div>
+
+            <div class="result-wrapper">
+                <div class="result-area" id="resultArea">
+                    <canvas id="resultCanvas"></canvas>
+                    <div class="placeholder" id="resultPlaceholder">
+                        <i class="fas fa-image" style="font-size: 2em; margin-bottom: 10px;"></i><br>
+                        请选择图片并点击「开始推理」
+                    </div>
+                </div>
+                <div class="result-json" id="resultJsonPanel">
+                    <div class="json-header">
+                        <span><i class="fas fa-code"></i> Roboflow JSON 输出</span>
+                        <button class="btn btn-secondary" id="copyJsonBtn" style="font-size: 0.8em; padding: 3px 8px;"><i class="fas fa-copy"></i> 复制</button>
+                    </div>
+                    <pre id="jsonOutput"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const projectName = urlParams.get('project') || '';
+        const targetVersion = urlParams.get('version') || '';
+        document.getElementById('projectName').textContent = projectName;
+
+        let currentTestImage = null;
+        let currentTestResult = null;
+        let currentTaskType = 'detect';
+        let currentModelPath = '';
+        let currentYoloVersion = 'yolo11';
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+
+        const taskLabels = { detect: '目标检测', segment: '实例分割', pose: '姿态估计', obb: '旋转框检测', classify: '图像分类' };
+
+        // 加载指定版本模型并直接进入测试工作区
+        function loadModelAndEnterTest() {
+            if (!projectName) { showToast('缺少工程名称'); return; }
+            fetch('/api/train/model-info?project=' + encodeURIComponent(projectName))
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.exists || !data.versions || data.versions.length === 0) {
+                        showToast('该工程暂无训练完成的模型');
+                        return;
+                    }
+                    let v = data.versions[0];
+                    // 如果 URL 指定了版本，优先匹配
+                    if (targetVersion) {
+                        const found = data.versions.find(x => x.version === targetVersion);
+                        if (found) v = found;
+                    }
+                    const info = v.info || {};
+                    const version = v.version;
+                    const task = info.task || 'detect';
+                    const yolo = info.yolo_version || 'yolo11';
+                    const modelPath = v.model_path || '';
+                    currentTaskType = task;
+                    currentYoloVersion = yolo;
+                    const projectPath = '/projects/' + projectName + '/models/' + version + '/best.pt';
+                    currentModelPath = modelPath || projectPath;
+                    document.getElementById('testModelName').textContent = version + ' (' + (taskLabels[task] || task) + ')';
+                    document.getElementById('testWorkspace').classList.add('active');
+                    loadTestImages();
+                })
+                .catch(() => {
+                    showToast('加载模型信息失败');
+                });
+        }
+
+        // 加载 test 图片
+        function loadTestImages() {
+            const container = document.getElementById('testThumbnails');
+            container.innerHTML = '<span style="color:#888;font-size:0.85em;">加载中...</span>';
+            fetch('/api/project-test-images?project=' + encodeURIComponent(projectName))
+                .then(r => r.json())
+                .then(data => {
+                    container.innerHTML = '';
+                    if (data.images && data.images.length > 0) {
+                        data.images.slice(0, 4).forEach((img, idx) => {
+                            const thumb = document.createElement('div');
+                            thumb.className = 'thumb';
+                            thumb.innerHTML = '<img src="' + img.url + '" style="width:100%;height:100%;object-fit:cover;">';
+                            thumb.onclick = () => selectImage(img.url, thumb);
+                            if (idx === 0) selectImage(img.url, thumb);
+                            container.appendChild(thumb);
+                        });
+                    } else {
+                        container.innerHTML = '<span style="color:#888;font-size:0.85em;">暂无 test 图片，请上传</span>';
+                    }
+                })
+                .catch(() => {
+                    container.innerHTML = '<span style="color:#888;font-size:0.85em;">加载失败</span>';
+                });
+        }
+
+        function selectImage(url, thumbEl) {
+            currentTestImage = url;
+            document.querySelectorAll('.thumb').forEach(t => t.classList.remove('active'));
+            if (thumbEl) thumbEl.classList.add('active');
+        }
+
+        // 上传图片
+        const imageInput = document.getElementById('imageInput');
+        imageInput.addEventListener('change', e => {
+            if (e.target.files.length > 0) {
+                const file = e.target.files[0];
+                if (!file.type.startsWith('image/')) { showToast('仅支持图片文件'); return; }
+                const reader = new FileReader();
+                reader.onload = evt => {
+                    currentTestImage = evt.target.result;
+                    const container = document.getElementById('testThumbnails');
+                    const thumb = document.createElement('div');
+                    thumb.className = 'thumb active';
+                    thumb.innerHTML = '<img src="' + evt.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
+                    thumb.onclick = () => selectImage(evt.target.result, thumb);
+                    document.querySelectorAll('.thumb').forEach(t => t.classList.remove('active'));
+                    container.appendChild(thumb);
+                    showToast('图片上传成功');
+                };
+                reader.readAsDataURL(file);
+                e.target.value = '';
+            }
+        });
+
+        // 拖拽上传
+        const uploadZone = document.getElementById('uploadZone');
+        uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.style.borderColor = '#339af0'; });
+        uploadZone.addEventListener('dragleave', e => { e.preventDefault(); uploadZone.style.borderColor = '#ced4da'; });
+        uploadZone.addEventListener('drop', e => {
+            e.preventDefault();
+            uploadZone.style.borderColor = '#ced4da';
+            if (e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                if (!file.type.startsWith('image/')) { showToast('仅支持图片文件'); return; }
+                const reader = new FileReader();
+                reader.onload = evt => {
+                    currentTestImage = evt.target.result;
+                    const container = document.getElementById('testThumbnails');
+                    const thumb = document.createElement('div');
+                    thumb.className = 'thumb active';
+                    thumb.innerHTML = '<img src="' + evt.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
+                    thumb.onclick = () => selectImage(evt.target.result, thumb);
+                    document.querySelectorAll('.thumb').forEach(t => t.classList.remove('active'));
+                    container.appendChild(thumb);
+                    showToast('图片上传成功');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // 返回模型训练页面
+        document.getElementById('backToTrainBtn').addEventListener('click', () => {
+            window.location.href = '/train?project=' + encodeURIComponent(projectName);
+        });
+
+        // 开始推理
+        document.getElementById('inferBtn').addEventListener('click', () => {
+            if (!currentTestImage) { showToast('请先选择或上传图片'); return; }
+            if (!currentModelPath) { showToast('模型路径异常'); return; }
+            document.getElementById('inferLoading').style.display = 'inline';
+            document.getElementById('inferBtn').disabled = true;
+
+            const formData = new FormData();
+            formData.append('model_path', currentModelPath);
+            formData.append('version', currentYoloVersion);
+            formData.append('task', currentTaskType);
+            formData.append('project', projectName);
+            if (currentTestImage.startsWith('data:')) {
+                const blob = dataURLtoBlob(currentTestImage);
+                formData.append('image', blob, 'test.jpg');
+            } else {
+                formData.append('image_url', currentTestImage);
+            }
+
+            fetch('/api/model-test/infer', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('inferLoading').style.display = 'none';
+                    document.getElementById('inferBtn').disabled = false;
+                    if (data.error) { showToast('推理失败: ' + data.error); return; }
+                    currentTestResult = data.predictions || [];
+                    renderResult(currentTestImage, currentTestResult, currentTaskType);
+                    // 显示 JSON 输出
+                    const jsonPanel = document.getElementById('resultJsonPanel');
+                    const jsonOutput = document.getElementById('jsonOutput');
+                    jsonPanel.classList.add('active');
+                    jsonOutput.textContent = JSON.stringify(data, null, 2);
+                })
+                .catch(err => {
+                    document.getElementById('inferLoading').style.display = 'none';
+                    document.getElementById('inferBtn').disabled = false;
+                    showToast('请求失败: ' + err.message);
+                });
+        });
+
+        document.getElementById('showAnnotations').addEventListener('change', () => {
+            if (currentTestImage && currentTestResult) renderResult(currentTestImage, currentTestResult, currentTaskType);
+        });
+
+        document.getElementById('copyJsonBtn').addEventListener('click', () => {
+            const text = document.getElementById('jsonOutput').textContent;
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(() => showToast('JSON 已复制到剪贴板')).catch(() => showToast('复制失败'));
+        });
+
+        function dataURLtoBlob(dataURL) {
+            const arr = dataURL.split(',');
+            const mime = arr[0].match(/:(.*?);/)[1];
+            const bstr = atob(arr[1]);
+            let n = bstr.length;
+            const u8arr = new Uint8Array(n);
+            while (n--) u8arr[n] = bstr.charCodeAt(n);
+            return new Blob([u8arr], { type: mime });
+        }
+
+        function renderResult(imageSrc, predictions, taskType) {
+            const canvas = document.getElementById('resultCanvas');
+            const placeholder = document.getElementById('resultPlaceholder');
+            const showAnn = document.getElementById('showAnnotations').checked;
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                canvas.style.display = 'block';
+                placeholder.style.display = 'none';
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+                if (!showAnn) return;
+                const colors = ['#FF5733', '#33FF57', '#3357FF', '#FF33F5', '#F5FF33', '#33FFF5'];
+                if (taskType === 'classify') {
+                    ctx.font = 'bold 24px sans-serif';
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(10, 10, 300, 40);
+                    ctx.fillStyle = '#fff';
+                    const top = predictions[0];
+                    ctx.fillText((top ? top.class + ': ' + (top.confidence * 100).toFixed(1) + '%' : '无结果'), 20, 38);
+                    return;
+                }
+                predictions.forEach((p, i) => {
+                    const color = colors[i % colors.length];
+                    ctx.strokeStyle = color;
+                    ctx.fillStyle = color;
+                    ctx.lineWidth = 2;
+                    if (taskType === 'obb' && p.points) {
+                        ctx.beginPath();
+                        ctx.moveTo(p.points[0].x, p.points[0].y);
+                        for (let j = 1; j < p.points.length; j++) ctx.lineTo(p.points[j].x, p.points[j].y);
+                        ctx.closePath();
+                        ctx.stroke();
+                    } else if (taskType === 'segment' && p.points) {
+                        ctx.globalAlpha = 0.4;
+                        ctx.beginPath();
+                        ctx.moveTo(p.points[0].x * canvas.width, p.points[0].y * canvas.height);
+                        for (let j = 1; j < p.points.length; j++) ctx.lineTo(p.points[j].x * canvas.width, p.points[j].y * canvas.height);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.globalAlpha = 1.0;
+                        if (p.x !== undefined) { const x1 = p.x - p.width / 2, y1 = p.y - p.height / 2; ctx.strokeRect(x1, y1, p.width, p.height); }
+                    } else if (p.x !== undefined && p.width !== undefined) {
+                        const x1 = p.x - p.width / 2, y1 = p.y - p.height / 2;
+                        ctx.strokeRect(x1, y1, p.width, p.height);
+                    }
+                    let labelY = 0, labelX = 0;
+                    if (taskType === 'obb' && p.points) { labelX = p.points[0].x; labelY = p.points[0].y - 5; }
+                    else if (p.x !== undefined && p.width !== undefined) { labelX = p.x - p.width / 2; labelY = p.y - p.height / 2 - 5; }
+                    if (labelY < 15) labelY = 15;
+                    const label = (p.class || '') + ' ' + (p.confidence ? (p.confidence * 100).toFixed(0) + '%' : '');
+                    if (label.trim()) {
+                        ctx.font = 'bold 14px sans-serif';
+                        const metrics = ctx.measureText(label);
+                        ctx.fillStyle = color;
+                        ctx.fillRect(labelX, labelY - 14, metrics.width + 8, 18);
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(label, labelX + 4, labelY);
+                    }
+                    if (taskType === 'pose' && p.keypoints) {
+                        p.keypoints.forEach(kp => {
+                            ctx.beginPath();
+                            ctx.arc(kp.x, kp.y, 3, 0, Math.PI * 2);
+                            ctx.fillStyle = '#00ff00';
+                            ctx.fill();
+                        });
+                        const skeleton = [[0,1],[0,2],[1,3],[2,4],[5,6],[5,7],[6,8],[7,9],[8,10],[11,12],[11,13],[12,14],[13,15],[14,16],[5,11],[6,12]];
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = 1;
+                        skeleton.forEach(pair => {
+                            const a = p.keypoints[pair[0]], b = p.keypoints[pair[1]];
+                            if (a && b && a.confidence > 0.3 && b.confidence > 0.3) {
+                                ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+                            }
+                        });
+                    }
+                });
+            };
+            img.src = imageSrc;
+        }
+
+        // 初始化
+        loadModelAndEnterTest();
+    </script>
+</body>
+</html>
