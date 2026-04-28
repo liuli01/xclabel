@@ -1003,7 +1003,7 @@
                 .then(data => {
                     const section = document.getElementById('modelInfoSection');
                     const content = document.getElementById('modelInfoContent');
-                    if (data.exists && data.versions && data.versions.length > 0) {
+                    if (data.versions && data.versions.length > 0) {
                         section.style.display = 'block';
                         let html = '';
                         data.versions.forEach((v, idx) => {

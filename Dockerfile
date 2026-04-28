@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
-RUN uv add opencv-python-headless -y
+RUN uv add opencv-python-headless
 
 # ============================================================
 # Stage 2: Runtime - 最小化运行时镜像

@@ -13,3 +13,5 @@ app/__pycache__
 static/storage
 .pytest_cache
 .ruff_cache
+
+resources/

@@ -35,6 +35,7 @@ dependencies = [
     "pyinstaller>=6.11.1",
     "gunicorn>=25.3.0",
     "pyyaml>=6.0",
+    "nndeploy>=3.0.10",
 ]
 
 [project.optional-dependencies]

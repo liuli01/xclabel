@@ -1,0 +1,37 @@
+# ============================================
+# xclabel-deploy GPU Inference Container
+# ============================================
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python 3.12
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-pip \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY deploy/requirements.txt .
+RUN python3.12 -m pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# Copy service code
+COPY deploy/*.py ./
+
+# Create cache directory
+RUN mkdir -p /app/cache/models /app/cache/workflows
+
+# Run as non-root user
+RUN useradd -m -u 1000 deployuser && \
+    chown -R deployuser:deployuser /app
+USER deployuser
+
+EXPOSE 8000
+
+CMD ["python3.12", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

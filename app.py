@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import math
@@ -3609,6 +3610,8 @@ class YOLOTrainingTask:
                 self.status = TASK_STATUS['COMPLETED']
                 # 尝试读取评估结果
                 self._load_val_results()
+                # 自动导出 ONNX
+                self._auto_export_onnx()
             elif self.status != TASK_STATUS['STOPPED']:
                 self.status = TASK_STATUS['ERROR']
                 self.error = f'训练进程返回非零退出码: {rc}'
@@ -3625,10 +3628,11 @@ class YOLOTrainingTask:
             'result': self.result,
             'error': self.error,
             'elapsed': round(self.end_time - self.start_time, 1) if self.start_time else 0,
+            'deploy_hint': self._get_deploy_hint() if self.status == TASK_STATUS['COMPLETED'] else None,
         })
 
     def _save_version_status(self):
-        """将训练最终状态写入版本 model_info.json。"""
+        """将训练最终状态写入版本 model_info.json，并生成 deploy_metadata.json。"""
         try:
             version = getattr(self, 'version', None)
             if not version or not self.project_name:
@@ -3648,6 +3652,23 @@ class YOLOTrainingTask:
                 info['error'] = self.error
             with open(info_path, 'w', encoding='utf-8') as f:
                 json.dump(info, f, indent=2, ensure_ascii=False)
+
+            # 生成 deploy_metadata.json（供 deploy 容器使用）
+            deploy_meta = {
+                'project': self.project_name,
+                'version': version,
+                'yolo_version': self.params.get('yolo_version', 'yolo11'),
+                'task': self.params.get('task', 'detect'),
+                'input_size': self.params.get('imgsz', 640),
+                'class_count': len(info.get('classes', [])) if info else 0,
+                'classes': info.get('classes', []) if info else [],
+                'onnx_file': 'best.onnx' if os.path.exists(os.path.join(version_dir, 'best.onnx')) else None,
+                'pt_file': 'best.pt' if os.path.exists(os.path.join(version_dir, 'best.pt')) else None,
+                'created_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+            }
+            deploy_meta_path = os.path.join(version_dir, 'deploy_metadata.json')
+            with open(deploy_meta_path, 'w', encoding='utf-8') as f:
+                json.dump(deploy_meta, f, indent=2, ensure_ascii=False)
         except Exception as e:
             print(f'保存版本状态失败: {e}')
 
@@ -3660,6 +3681,51 @@ class YOLOTrainingTask:
                     self.result = json.load(f)
         except Exception:
             pass
+
+    def _auto_export_onnx(self):
+        """训练完成后自动导出 ONNX 格式。"""
+        try:
+            version = getattr(self, 'version', None)
+            if not version or not self.project_name:
+                return
+            models_dir = os.path.join(get_project_path(self.project_name), 'models')
+            version_dir = os.path.join(models_dir, version)
+            model_path = os.path.join(version_dir, 'best.pt')
+            output_path = os.path.join(version_dir, 'best.onnx')
+
+            if not os.path.exists(model_path) or os.path.exists(output_path):
+                return
+
+            yolo_version = self.params.get('yolo_version', 'yolo11')
+            python_path = get_ultralytics_python_path(yolo_version)
+            cmd = [
+                python_path,
+                os.path.join(app.root_path, 'plugins', 'export_yolo.py'),
+                '--model', model_path,
+                '--output', output_path,
+            ]
+            subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
+        except Exception as e:
+            print(f'自动导出 ONNX 失败: {e}')
+
+    def _get_deploy_hint(self):
+        """生成部署提示信息。"""
+        try:
+            version = getattr(self, 'version', None)
+            if not version or not self.project_name:
+                return None
+            models_dir = os.path.join(get_project_path(self.project_name), 'models')
+            version_dir = os.path.join(models_dir, version)
+            onnx_path = os.path.join(version_dir, 'best.onnx')
+            has_onnx = os.path.exists(onnx_path)
+            return {
+                'version': version,
+                'project': self.project_name,
+                'onnx_ready': has_onnx,
+                'deploy_api': f'POST /load/model with project_id="{self.project_name}", model_version="{version}"',
+            }
+        except Exception:
+            return None
 
     def stop(self):
         """停止训练任务。"""
@@ -4114,6 +4180,187 @@ def train_export_onnx():
             return jsonify({'error': f'导出失败: {err}'}), 500
     except Exception as e:
         return jsonify({'error': f'导出异常: {str(e)}'}), 500
+
+
+@app.route('/api/model/download')
+def model_download():
+    """Download a model version as a zip package (for deploy container)."""
+    project_name = request.args.get('project')
+    version = request.args.get('version')
+    if not project_name or not version:
+        return jsonify({'error': 'Missing project or version parameter'}), 400
+
+    project_path = get_project_path(project_name)
+    version_dir = os.path.join(project_path, 'models', version)
+    if not os.path.isdir(version_dir):
+        return jsonify({'error': 'Model version not found'}), 404
+
+    # Create zip in memory
+    memory_file = io.BytesIO()
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(version_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, version_dir)
+                zf.write(file_path, arcname)
+    memory_file.seek(0)
+
+    return send_file(
+        memory_file,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f'{project_name}_{version}.zip'
+    )
+
+
+@app.route('/api/model/versions')
+def model_versions():
+    """List all model versions for a project (for deploy container)."""
+    project_name = request.args.get('project')
+    if not project_name:
+        return jsonify({'error': 'Missing project parameter'}), 400
+
+    project_path = get_project_path(project_name)
+    models_dir = os.path.join(project_path, 'models')
+    versions = []
+
+    if os.path.exists(models_dir):
+        for name in sorted(os.listdir(models_dir), reverse=True):
+            vdir = os.path.join(models_dir, name)
+            if not os.path.isdir(vdir):
+                continue
+            info_path = os.path.join(vdir, 'model_info.json')
+            info = {}
+            if os.path.exists(info_path):
+                try:
+                    with open(info_path, 'r', encoding='utf-8') as f:
+                        info = json.load(f)
+                except Exception:
+                    pass
+            versions.append({
+                'version': name,
+                'onnx_exists': os.path.exists(os.path.join(vdir, 'best.onnx')),
+                'info': info,
+            })
+
+    return jsonify({'versions': versions})
+
+
+@app.route('/api/admin/rebuild-metadata')
+def rebuild_metadata():
+    """一次性修复：遍历所有模型版本，从 args.yaml -> data.yaml 读取 names 并补全 classes。"""
+    import yaml
+    projects_dir = os.path.join(app.root_path, 'projects')
+    fixed = []
+    errors = []
+    skipped = []
+    if not os.path.exists(projects_dir):
+        return jsonify({'fixed': [], 'errors': ['projects 目录不存在']})
+    for project_name in os.listdir(projects_dir):
+        project_path = os.path.join(projects_dir, project_name)
+        if not os.path.isdir(project_path):
+            continue
+        models_dir = os.path.join(project_path, 'models')
+        if not os.path.exists(models_dir):
+            continue
+        for name in os.listdir(models_dir):
+            vdir = os.path.join(models_dir, name)
+            if not os.path.isdir(vdir):
+                continue
+            args_yaml_path = os.path.join(vdir, 'args.yaml')
+            if not os.path.exists(args_yaml_path):
+                skipped.append(f'{project_name}/{name}: 无 args.yaml')
+                continue
+            try:
+                with open(args_yaml_path, 'r', encoding='utf-8') as f:
+                    args_yaml = yaml.safe_load(f)
+                data_yaml_path = args_yaml.get('data')
+                classes = []
+                if data_yaml_path and os.path.exists(data_yaml_path):
+                    with open(data_yaml_path, 'r', encoding='utf-8') as f:
+                        data_yaml = yaml.safe_load(f)
+                    names = data_yaml.get('names', {})
+                    if isinstance(names, dict):
+                        classes = [names[i] for i in sorted(names.keys(), key=lambda x: int(x) if isinstance(x, str) and x.isdigit() else x)]
+                    elif isinstance(names, list):
+                        classes = names
+                # 更新 model_info.json
+                info_path = os.path.join(vdir, 'model_info.json')
+                info = {}
+                if os.path.exists(info_path):
+                    with open(info_path, 'r', encoding='utf-8') as f:
+                        info = json.load(f)
+                info['classes'] = classes
+                with open(info_path, 'w', encoding='utf-8') as f:
+                    json.dump(info, f, indent=2, ensure_ascii=False)
+                # 重新生成 deploy_metadata.json
+                deploy_meta = {
+                    'project': project_name,
+                    'version': name,
+                    'yolo_version': info.get('yolo_version', 'yolo11'),
+                    'task': info.get('task', 'detect'),
+                    'input_size': info.get('imgsz', 640),
+                    'class_count': len(classes),
+                    'classes': classes,
+                    'onnx_file': 'best.onnx' if os.path.exists(os.path.join(vdir, 'best.onnx')) else None,
+                    'pt_file': 'best.pt' if os.path.exists(os.path.join(vdir, 'best.pt')) else None,
+                    'created_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                }
+                deploy_meta_path = os.path.join(vdir, 'deploy_metadata.json')
+                with open(deploy_meta_path, 'w', encoding='utf-8') as f:
+                    json.dump(deploy_meta, f, indent=2, ensure_ascii=False)
+                fixed.append(f'{project_name}/{name}: {len(classes)} 个类别')
+            except Exception as e:
+                errors.append(f'{project_name}/{name}: {str(e)}')
+    return jsonify({'fixed': fixed, 'errors': errors, 'skipped': skipped})
+
+
+@app.route('/api/workflow/export')
+def workflow_export():
+    """Export workflow.json for a project (for deploy container)."""
+    project_name = request.args.get('project')
+    name = request.args.get('name')
+    if not project_name or not name:
+        return jsonify({'error': 'Missing project or name parameter'}), 400
+
+    project_path = get_project_path(project_name)
+    workflows_dir = os.path.join(project_path, 'workflows')
+    workflow_path = os.path.join(workflows_dir, f'{name}.json')
+
+    if not os.path.exists(workflow_path):
+        return jsonify({'error': 'Workflow not found'}), 404
+
+    return send_file(workflow_path, mimetype='application/json')
+
+
+@app.route('/api/workflow/list')
+def workflow_list():
+    """List all workflows for a project (for deploy container)."""
+    project_name = request.args.get('project')
+    if not project_name:
+        return jsonify({'error': 'Missing project parameter'}), 400
+
+    project_path = get_project_path(project_name)
+    workflows_dir = os.path.join(project_path, 'workflows')
+    workflows = []
+
+    if os.path.exists(workflows_dir):
+        for filename in os.listdir(workflows_dir):
+            if filename.endswith('.json'):
+                workflow_name = filename[:-5]
+                workflow_path = os.path.join(workflows_dir, filename)
+                try:
+                    with open(workflow_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+                workflows.append({
+                    'name': workflow_name,
+                    'description': data.get('description', ''),
+                    'nodes': list(data.get('nodes', {}).keys()),
+                })
+
+    return jsonify({'workflows': workflows})
 
 
 @app.route('/train')
