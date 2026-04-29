@@ -56,31 +56,31 @@ COPY --chown=appuser:appgroup static/ ./static/
 COPY --chown=appuser:appgroup plugins/ ./plugins/
 
 # 创建 GPU 版 YOLO 虚拟环境（在 CUDA 环境中安装，torch 自动为 CUDA 版本）
-RUN python3 -m venv plugins/yolo8/venv \
-    && plugins/yolo8/venv/bin/pip install --upgrade pip \
-    && plugins/yolo8/venv/bin/pip install ultralytics==8.0.196 \
-    && echo '{"is_installed": true, "has_cuda": true, "hardware": "CUDA"}' > plugins/yolo8/install_info.json \
-    && mkdir -p plugins/yolo8/models
+# RUN python3 -m venv plugins/yolo8/venv \
+#     && plugins/yolo8/venv/bin/pip install --upgrade pip \
+#     && plugins/yolo8/venv/bin/pip install ultralytics==8.0.196 \
+#     && echo '{"is_installed": true, "has_cuda": true, "hardware": "CUDA"}' > plugins/yolo8/install_info.json \
+#     && mkdir -p plugins/yolo8/models
 
-RUN python3 -m venv plugins/yolo11/venv \
-    && plugins/yolo11/venv/bin/pip install --upgrade pip \
-    && plugins/yolo11/venv/bin/pip install ultralytics==8.4.41 \
-    && echo '{"is_installed": true, "has_cuda": true, "hardware": "CUDA"}' > plugins/yolo11/install_info.json \
-    && mkdir -p plugins/yolo11/models
+# RUN python3 -m venv plugins/yolo11/venv \
+#     && plugins/yolo11/venv/bin/pip install --upgrade pip \
+#     && plugins/yolo11/venv/bin/pip install ultralytics==8.4.41 \
+#     && echo '{"is_installed": true, "has_cuda": true, "hardware": "CUDA"}' > plugins/yolo11/install_info.json \
+#     && mkdir -p plugins/yolo11/models
 
-RUN python3 -m venv plugins/yolo26/venv \
-    && plugins/yolo26/venv/bin/pip install --upgrade pip \
-    && plugins/yolo26/venv/bin/pip install "ultralytics>=8.4.0" \
-    && echo '{"is_installed": true, "has_cuda": true, "hardware": "CUDA"}' > plugins/yolo26/install_info.json \
-    && mkdir -p plugins/yolo26/models
+# RUN python3 -m venv plugins/yolo26/venv \
+#     && plugins/yolo26/venv/bin/pip install --upgrade pip \
+#     && plugins/yolo26/venv/bin/pip install "ultralytics>=8.4.0" \
+#     && echo '{"is_installed": true, "has_cuda": true, "hardware": "CUDA"}' > plugins/yolo26/install_info.json \
+#     && mkdir -p plugins/yolo26/models
 
-# 下载预训练模型
-RUN plugins/yolo8/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" \
-    && cp /root/.ultralytics/models/yolov8n.pt plugins/yolo8/models/ \
-    && plugins/yolo11/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')" \
-    && cp /root/.ultralytics/models/yolo11n.pt plugins/yolo11/models/ \
-    && plugins/yolo26/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolo26n.pt')" 2>/dev/null \
-    && cp /root/.ultralytics/models/yolo26n.pt plugins/yolo26/models/ 2>/dev/null || echo "yolo26n.pt will use local file if present"
+# # 下载预训练模型
+# RUN plugins/yolo8/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" \
+#     && cp /root/.ultralytics/models/yolov8n.pt plugins/yolo8/models/ \
+#     && plugins/yolo11/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')" \
+#     && cp /root/.ultralytics/models/yolo11n.pt plugins/yolo11/models/ \
+#     && plugins/yolo26/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolo26n.pt')" 2>/dev/null \
+#     && cp /root/.ultralytics/models/yolo26n.pt plugins/yolo26/models/ 2>/dev/null || echo "yolo26n.pt will use local file if present"
 
 RUN mkdir -p uploads static/annotations \
     && chown -R appuser:appgroup uploads plugins static/annotations

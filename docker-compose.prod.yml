@@ -1,0 +1,77 @@
+# ============================================================
+# Production Deployment - Pull pre-built images from Docker Hub
+# Usage: docker compose -f docker-compose.prod.yml up -d
+# ============================================================
+
+services:
+  xclabel-server:
+    image: liuli01/xclabel-server:${SERVER_TAG:-cpu-latest}
+    container_name: xclabel-server
+    ports:
+      - "${SERVER_PORT:-9924}:5000"
+    volumes:
+      - ./projects:/app/projects
+      - ./uploads:/app/uploads
+      - ./static/annotations:/app/static/annotations
+      - ./plugins:/app/plugins
+      - nndeploy-resources:/app/resources
+    environment:
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=5000
+      - FLASK_DEBUG=false
+      - NNDEPLOY_APP_URL=http://nndeploy-app:8002
+    restart: unless-stopped
+
+  nndeploy-app:
+    image: liuli01/xclabel-nndeploy:${NNDEPLOY_TAG:-latest}
+    container_name: nndeploy-app
+    command: nndeploy-app --port 8002 --resources /app/resources
+    ports:
+      - "${NNDEPLOY_PORT:-8002}:8002"
+    volumes:
+      - nndeploy-resources:/app/resources
+    environment:
+      - NNDEPLOY_RESOURCES=/app/resources
+    restart: unless-stopped
+
+  xclabel-deploy-cpu:
+    image: liuli01/xclabel-deploy:${DEPLOY_CPU_TAG:-cpu-latest}
+    container_name: xclabel-deploy-cpu
+    ports:
+      - "${DEPLOY_CPU_PORT:-8000}:8000"
+    environment:
+      - SERVER_URL=http://xclabel-server:5000
+      - CACHE_DIR=/app/cache
+      - MAX_ENGINES=10
+    volumes:
+      - deploy-cache-cpu:/app/cache
+    depends_on:
+      - xclabel-server
+    restart: unless-stopped
+
+  xclabel-deploy-gpu:
+    image: liuli01/xclabel-deploy:${DEPLOY_GPU_TAG:-gpu-latest}
+    container_name: xclabel-deploy-gpu
+    ports:
+      - "${DEPLOY_GPU_PORT:-8001}:8000"
+    environment:
+      - SERVER_URL=http://xclabel-server:5000
+      - CACHE_DIR=/app/cache
+      - MAX_ENGINES=5
+    volumes:
+      - deploy-cache-gpu:/app/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      - xclabel-server
+    restart: unless-stopped
+
+volumes:
+  deploy-cache-cpu:
+  deploy-cache-gpu:
+  nndeploy-resources:
