@@ -1530,7 +1530,6 @@ def ai_label():
         # 获取API配置
         api_url = api_config.get('apiUrl', 'http://127.0.0.1:1234/v1')
         api_key = api_config.get('apiKey', '')
-        logging.info(f"[AI标注] apiKey是否为空: {not api_key}, apiConfig keys: {list(api_config.keys())}")
         timeout = int(api_config.get('timeout', 30))
         prompt = api_config.get('prompt', '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}')
         model = api_config.get('model', 'qwen/qwen3-vl-8b')
@@ -1843,7 +1842,6 @@ def load_api_config():
         with open(config_path, 'r', encoding='utf-8') as f:
             config_data = json.load(f)
 
-        logging.info(f"[load-api-config] 返回配置内容: {config_data}")
         return jsonify({'success': True, 'config': config_data})
     except Exception as e:
         import traceback

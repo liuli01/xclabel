@@ -9,7 +9,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_PREFERENCE=only-managed
 
 # 安装指定 Python 版本（缓存层）
-RUN uv python install 3.12
+RUN uv python install 3.12 || uv python install 3.12
 
 # 安装系统 Python（用于创建 YOLO venv）
 RUN apt-get update \

@@ -497,11 +497,6 @@ class AIAutoLabeler:
         try:
             response = self.session.post(api_endpoint, headers=headers, json=payload, timeout=self.timeout)
 
-            # 记录请求详情以便调试
-            logging.info(f"发送API请求到: {api_endpoint}")
-            logging.info(f"请求头: {headers}")
-            logging.info(f"请求体: {json.dumps(payload, ensure_ascii=False)}")
-
             # 检查响应状态码
             if not response.ok:
                 # 记录响应详情
