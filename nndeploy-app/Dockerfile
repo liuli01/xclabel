@@ -1,27 +1,55 @@
-# ============================================
-# xclabel-deploy-workflows Workflow Execution Container
-# ============================================
-FROM python:3.12-slim-bookworm
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/ubuntu:22.04
 
-# Install system dependencies
-RUN apt-get update \&\& apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 libgomp1 \
-    \&\& rm -rf /var/lib/apt/lists/*
-
+ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Install nndeploy only
-COPY deploy_workflows/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# ---- Install System Deps ----
+RUN apt-get update && apt-get install -y \
+    build-essential cmake ninja-build git wget curl pkg-config \
+    python3-dev python3-pip python3-venv \
+    libopencv-dev protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create resources directories
-RUN mkdir -p /app/resources/{models,workflow,images,videos,audios,db,others}
+# ---- Install Python Libraray ----
+RUN python3 -m pip install --upgrade pip
+RUN pip install pybind11 setuptools wheel cython requests pathlib packaging
 
-# Run as non-root user
-RUN useradd -m -u 1000 deployuser \&\& \
-    chown -R deployuser:deployuser /app
-USER deployuser
+# ---- Install Rust（Optional）----
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
+    && . "$HOME/.cargo/env" \
+    && rustup install 1.88.0 \
+    && rustup default 1.88.0 \
+    && rustup target add x86_64-unknown-linux-gnu
 
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# ---- Clone nndeploy Project（Include Submodules）----
+RUN git clone --recursive https://github.com/nndeploy/nndeploy.git . && \
+    git pull origin main
+
+# ---- Install OpenCV + ONNX Runtime ----
+RUN cd tool/script && \
+    python3 install_opencv.py && \
+    python3 install_onnxruntime.py && \
+    cd ../..
+
+# ---- Build C++ and Install Python Module ----
+RUN rm -rf build && \
+    mkdir build && \
+    cp cmake/config_opencv_ort_tokenizer.cmake build/config.cmake && \
+    cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 .. && \
+    make -j$(nproc) && \
+    make install
+
+# ---- Install Python Package ----
+RUN cd python && \
+    pip install -e .
+
+RUN echo "/app/python/nndeploy" >> /etc/ld.so.conf.d/nndeploy.conf && ldconfig
+
+# ---- Default Interface ----
+WORKDIR /app/
 EXPOSE 8002
 
 CMD ["nndeploy-app", "--port", "8002", "--resources", "/app/resources"]

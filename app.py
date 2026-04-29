@@ -957,24 +957,11 @@ def serve_uploads(filename):
     """提供uploads目录下的文件访问，支持子目录"""
     import os
 
-    # 打印请求的文件名和get_upload_folder()配置，用于调试
-    print(f"请求的文件路径: {filename}")
-    print(f"get_upload_folder()配置: {get_upload_folder()}")
+    # uploads 路由应始终映射到根目录下的 uploads 文件夹
+    uploads_base = LEGACY_UPLOAD_FOLDER
 
     # 构建完整的文件路径
-    full_path = os.path.join(get_upload_folder(), filename)
-    print(f"完整的文件路径: {full_path}")
-
-    # 检查文件是否存在
-    if not os.path.exists(full_path):
-        print(f"文件不存在: {full_path}")
-        return jsonify({
-            'success': False,
-            'error': 'File not found',
-            'requested_path': filename,
-            'full_path': full_path,
-            'upload_folder': get_upload_folder()
-        }), 404
+    full_path = os.path.join(uploads_base, filename)
 
     # 安全检查，防止路径遍历攻击
     if '..' in filename or filename.startswith('/'):
@@ -984,8 +971,17 @@ def serve_uploads(filename):
             'error': 'Invalid file path'
         }), 400
 
-    print(f"成功找到文件: {full_path}")
-    return send_from_directory(get_upload_folder(), filename)
+    # 检查文件是否存在
+    if not os.path.exists(full_path):
+        return jsonify({
+            'success': False,
+            'error': 'File not found',
+            'requested_path': filename,
+            'full_path': full_path,
+            'upload_folder': uploads_base
+        }), 404
+
+    return send_from_directory(uploads_base, filename)
 
 
 @app.route('/api/upload', methods=['POST'])
@@ -1534,6 +1530,7 @@ def ai_label():
         # 获取API配置
         api_url = api_config.get('apiUrl', 'http://127.0.0.1:1234/v1')
         api_key = api_config.get('apiKey', '')
+        logging.info(f"[AI标注] apiKey是否为空: {not api_key}, apiConfig keys: {list(api_config.keys())}")
         timeout = int(api_config.get('timeout', 30))
         prompt = api_config.get('prompt', '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}')
         model = api_config.get('model', 'qwen/qwen3-vl-8b')
@@ -1830,6 +1827,7 @@ def load_api_config():
     try:
         # 读取配置文件
         config_path = os.path.join(get_upload_folder(), 'config', 'ai_config.json')
+        logging.info(f"[load-api-config] 当前项目: {get_current_project()}, 配置文件: {config_path}")
         if not os.path.exists(config_path):
             # 返回默认配置
             default_config = {
@@ -1845,6 +1843,7 @@ def load_api_config():
         with open(config_path, 'r', encoding='utf-8') as f:
             config_data = json.load(f)
 
+        logging.info(f"[load-api-config] 返回配置内容: {config_data}")
         return jsonify({'success': True, 'config': config_data})
     except Exception as e:
         import traceback
@@ -4083,7 +4082,7 @@ def train_model_info():
                     is_training = True
                     train_progress = yolo_training_task.progress
             # Check if published to nndeploy-app
-            published = os.path.exists(os.path.join('resources', 'models', f'{project_name}_{name}.onnx'))
+            published = os.path.exists(os.path.join('resources', 'models', project_name, f'{project_name}_{name}.onnx'))
 
             versions.append({
                 'version': name,
@@ -4297,7 +4296,7 @@ def model_publish():
             return jsonify({'error': f'Export exception: {str(e)}'}), 500
 
     # Copy to nndeploy resources
-    resources_models_dir = os.path.join('resources', 'models')
+    resources_models_dir = os.path.join('resources', 'models', project_name)
     os.makedirs(resources_models_dir, exist_ok=True)
     target_path = os.path.join(resources_models_dir, f'{project_name}_{version}.onnx')
 
@@ -4305,11 +4304,35 @@ def model_publish():
         shutil.copy2(onnx_path, target_path)
         return jsonify({
             'success': True,
-            'message': f'Model published to resources/models/{project_name}_{version}.onnx',
+            'message': f'Model published to resources/models/{project_name}/{project_name}_{version}.onnx',
             'path': target_path,
         })
     except Exception as e:
         return jsonify({'error': f'Failed to copy model: {str(e)}'}), 500
+
+
+@app.route('/api/model/unpublish', methods=['POST'])
+def model_unpublish():
+    """Unpublish a model version from nndeploy-app resources."""
+    data = request.json or {}
+    project_name = data.get('project')
+    version = data.get('version')
+    if not project_name or not version:
+        return jsonify({'error': 'Missing project or version parameter'}), 400
+
+    target_path = os.path.join('resources', 'models', project_name, f'{project_name}_{version}.onnx')
+
+    if not os.path.exists(target_path):
+        return jsonify({'error': 'Model not published'}), 404
+
+    try:
+        os.remove(target_path)
+        return jsonify({
+            'success': True,
+            'message': f'Model unpublished: resources/models/{project_name}/{project_name}_{version}.onnx',
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to remove model: {str(e)}'}), 500
 
 
 @app.route('/api/admin/rebuild-metadata')

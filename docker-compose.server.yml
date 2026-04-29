@@ -31,5 +31,48 @@ services:
       - NNDEPLOY_RESOURCES=/app/resources
     restart: unless-stopped
 
+  xclabel-deploy-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy.cpu
+    container_name: xclabel-deploy-cpu
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_URL=http://xclabel-server:5000
+      - CACHE_DIR=/app/cache
+      - MAX_ENGINES=10
+    volumes:
+      - deploy-cache-cpu:/app/cache
+    depends_on:
+      - xclabel-server
+    restart: unless-stopped
+
+  xclabel-deploy-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy.gpu
+    container_name: xclabel-deploy-gpu
+    ports:
+      - "8001:8000"
+    environment:
+      - SERVER_URL=http://xclabel-server:5000
+      - CACHE_DIR=/app/cache
+      - MAX_ENGINES=5
+    volumes:
+      - deploy-cache-gpu:/app/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - xclabel-server
+    restart: unless-stopped
+
 volumes:
   nndeploy-resources:
+  deploy-cache-cpu:
+  deploy-cache-gpu:

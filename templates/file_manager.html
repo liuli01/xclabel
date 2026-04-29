@@ -32,28 +32,9 @@
             padding: 0;
         }
         
-        /* 顶部导航栏 */
+        /* 顶部导航栏（复用 style.css 深色主题，仅保留 file-manager 特有的阴影） */
         .navbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background-color: white;
-            padding: 0 20px;
-            height: 60px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            z-index: 100;
-        }
-        
-        .logo h1 {
-            font-size: 24px;
-            font-weight: 600;
-            color: #495057;
-        }
-        
-        .logo .version {
-            font-size: 14px;
-            color: #6c757d;
-            margin-left: 8px;
         }
         
         .nav-buttons {
@@ -622,8 +603,8 @@
                 <h1 style="cursor: pointer;" onclick="window.location.href='/'">xclabel <span class="version">{{ version }}</span></h1>
             </div>
             <div class="nav-buttons">
-                <button class="btn btn-primary" onclick="window.location.href='/file-manager'">
-                    <i class="fas fa-folder-open"></i> 文件管理
+                <button class="btn btn-secondary" onclick="window.location.href='/ai-config'">
+                    <i class="fas fa-cog"></i> 返回AI配置
                 </button>
                 <button class="btn btn-secondary" onclick="window.location.href='/'">
                     <i class="fas fa-home"></i> 返回主页

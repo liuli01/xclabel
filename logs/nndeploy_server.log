@@ -193,3 +193,88 @@
 2026-04-28 23:33:36,982 WorkerProcess [WinError 1] 函数不正确。
 2026-04-28 23:33:37,179 MainProcess [DB] closed
 2026-04-29 00:29:30,251 WorkerProcess Worker PID=85288 started
+2026-04-29 11:36:37,641 WorkerProcess Worker PID=31656 started
+2026-04-29 11:37:38,305 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] create node: nndeploy.trtyolo.TRTYOLO, None
+2026-04-29 11:37:38,305 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] node_count: 0, i: 1
+2026-04-29 11:37:38,305 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] E/nndeploy_default_str: nndeploy::dag::createNode [File D:\a\nndeploy\nndeploy\framework\source\nndeploy\dag\node.cc][Line 1664] Failed to createNode node_1777433858304794_239841, node_key: nndeploy.trtyolo.TRTYOLO
+2026-04-29 11:37:38,305 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] E/nndeploy_default_str: nndeploy::dag::Graph::createNode4Py [File D:\a\nndeploy\nndeploy\framework\source\nndeploy\dag\graph.cc][Line 2331] create node[] failed!
+2026-04-29 11:37:38,374 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] Run failed: Failed to create node
+Traceback (most recent call last):
+  File "e:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\worker.py", line 128, in _exec
+    tp_map, results, status, msg = executor.execute(payload["graph_json"], task_id)
+                                   ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "e:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\executor.py", line 29, in execute
+    return self.runner.run(graph_json, name, task_id)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "e:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\dag\graph_runner.py", line 92, in run
+    self.graph, status = self._build_graph(graph_json_str, name)
+                         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "e:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\dag\graph_runner.py", line 41, in _build_graph
+    status = self.graph.deserialize(graph_json_str)
+  File "e:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\dag\graph.py", line 651, in deserialize
+    raise RuntimeError("Failed to create node")
+RuntimeError: Failed to create node
+
+2026-04-29 11:37:38,404 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] Process WorkerProcess:
+2026-04-29 11:37:38,405 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] Traceback (most recent call last):
+2026-04-29 11:37:38,406 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+2026-04-29 11:37:38,406 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-29 11:37:38,406 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71]   File "e:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\worker.py", line 210, in run
+    result_q.put((idx, status, results, time_profiler_map))
+                               ^^^^^^^
+2026-04-29 11:37:38,406 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] UnboundLocalError: cannot access local variable 'results' where it is not associated with a value
+2026-04-29 11:37:39,179 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] Exception ignored in atexit callback <function reset_all at 0x000002037E7323E0>
+2026-04-29 11:37:39,179 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] :
+2026-04-29 11:37:39,179 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] Traceback (most recent call last):
+2026-04-29 11:37:39,179 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71]   File "e:\coding\project\xclabel\.venv\Lib\site-packages\colorama\initialise.py", line 34, in reset_all
+2026-04-29 11:37:39,193 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] AnsiToWin32(orig_stdout).reset_all()
+2026-04-29 11:37:39,193 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71]   File "e:\coding\project\xclabel\.venv\Lib\site-packages\colorama\ansitowin32.py", line 189, in reset_all
+2026-04-29 11:37:39,203 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] self.wrapped.write(Style.RESET_ALL)
+2026-04-29 11:37:39,204 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71]   File "c:\Users\liuli\.vscode\extensions\ms-python.debugpy-2026.5.11171013-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_io.py", line 40, in write
+2026-04-29 11:37:39,205 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] r.write(s)
+2026-04-29 11:37:39,205 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] OSError
+2026-04-29 11:37:39,205 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] :
+2026-04-29 11:37:39,205 WorkerProcess [task_id=582435a4-151a-4af6-8e42-e17162b92f71] [WinError 1] 函数不正确。
+2026-04-29 11:37:39,360 MainProcess Worker died (exitcode=1). Restarting in 2 seconds...
+2026-04-29 11:37:41,361 MainProcess Worker restarted, new pid=31656 (restart_count=0)
+2026-04-29 11:37:41,372 MainProcess Worker spawned, pid=29996
+2026-04-29 11:37:43,520 WorkerProcess Worker PID=29996 started
+2026-04-29 11:38:01,196 MainProcess [WebSocket] client disconnected
+2026-04-29 11:38:01,197 MainProcess [WebSocket] client disconnected
+2026-04-29 11:38:45,184 MainProcess [WebSocket] client disconnected
+2026-04-29 11:38:45,185 MainProcess [WebSocket] client disconnected
+2026-04-29 11:40:20,728 MainProcess [WebSocket] client disconnected
+2026-04-29 11:40:20,728 MainProcess [WebSocket] client disconnected
+2026-04-29 11:40:21,600 MainProcess [WebSocket] client disconnected
+2026-04-29 11:40:21,601 MainProcess [WebSocket] client disconnected
+2026-04-29 12:05:46,640 WorkerProcess Process WorkerProcess:
+2026-04-29 12:05:46,643 WorkerProcess Traceback (most recent call last):
+2026-04-29 12:05:46,644 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+2026-04-29 12:05:46,644 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-29 12:05:46,644 WorkerProcess   File "e:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\worker.py", line 107, in run
+    item = task_q.get(timeout=1.0)
+2026-04-29 12:05:46,644 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\queues.py", line 111, in get
+    if not self._poll(timeout):
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-29 12:05:46,644 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 257, in poll
+    return self._poll(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-29 12:05:46,644 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 346, in _poll
+    return bool(wait([self], timeout))
+                ~~~~^^^^^^^^^^^^^^^^^
+2026-04-29 12:05:46,644 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1096, in wait
+    ready_handles = _exhaustive_wait(waithandle_to_obj.keys(), timeout)
+2026-04-29 12:05:46,644 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1028, in _exhaustive_wait
+    res = _winapi.WaitForMultipleObjects(short_L, False, timeout)
+2026-04-29 12:05:46,644 WorkerProcess KeyboardInterrupt
+2026-04-29 12:05:46,744 MainProcess [WebSocket] client disconnected
+2026-04-29 12:05:46,745 MainProcess [WebSocket] client disconnected
+2026-04-29 12:05:46,847 MainProcess [DB] closed

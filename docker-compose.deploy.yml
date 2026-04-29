@@ -2,7 +2,7 @@ services:
   xclabel-deploy-cpu:
     build:
       context: .
-      dockerfile: deploy/Dockerfile.cpu
+      dockerfile: Dockerfile.deploy.cpu
     container_name: xclabel-deploy-cpu
     ports:
       - "8000:8000"
@@ -17,7 +17,7 @@ services:
   xclabel-deploy-gpu:
     build:
       context: .
-      dockerfile: deploy/Dockerfile.gpu
+      dockerfile: Dockerfile.deploy.gpu
     container_name: xclabel-deploy-gpu
     ports:
       - "8001:8000"

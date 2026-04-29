@@ -520,8 +520,8 @@
                 <button class="btn btn-primary" onclick="window.location.href='/file-manager'">
                     <i class="fas fa-folder-open"></i> 文件管理
                 </button>
-                <button class="btn btn-secondary" onclick="window.location.href='/projects'">
-                    <i class="fas fa-home"></i> 返回工程
+                <button class="btn btn-secondary" onclick="history.back()">
+                    <i class="fas fa-arrow-left"></i> 返回上一级
                 </button>
             </div>
         </header>
@@ -552,6 +552,7 @@
                                 <option value="LMStudio" selected>LMStudio</option>
                                 <option value="vLLM">vLLM</option>
                                 <option value="ollama">ollama</option>
+                                <option value="OpenAI">OpenAI</option>
                                 <option value="阿里云大模型">阿里云大模型</option>
                                 <option value="HyperLPR">HyperLPR</option>
                             </select>

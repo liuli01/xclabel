@@ -1064,8 +1064,8 @@
                                 html += '    </button>';
                             }
                             if (v.published) {
-                                html += '    <button class="btn btn-secondary" disabled title="已发布到 nndeploy-app">';
-                                html += '      <i class="fas fa-check"></i> 已发布';
+                                html += '    <button class="btn btn-outline-warning" onclick="unpublishModel(this, \'' + v.version + '\')">';
+                                html += '      <i class="fas fa-times"></i> 取消发布';
                                 html += '    </button>';
                             } else if (v.onnx_exists) {
                                 html += '    <button class="btn btn-warning" onclick="publishModel(this, \'' + v.version + '\')"' + (publishDisabled ? ' disabled' : '') + '>';
@@ -1140,7 +1140,7 @@
 
         function publishModel(btn, version) {
             if (!projectName) return;
-            const targetPath = 'resources/models/' + projectName + '_' + version + '.onnx';
+            const targetPath = 'resources/models/' + projectName + '/' + projectName + '_' + version + '.onnx';
             if (!confirm('确定要发布版本 ' + version + ' 到 nndeploy-app 吗？\n目标路径: ' + targetPath)) return;
             btn.disabled = true;
             const originalHtml = btn.innerHTML;
@@ -1165,6 +1165,35 @@
                 btn.disabled = false;
                 btn.innerHTML = originalHtml;
                 showToast('发布失败: ' + err.message, 'error');
+            });
+        }
+
+        function unpublishModel(btn, version) {
+            if (!projectName) return;
+            if (!confirm('确定要取消发布版本 ' + version + ' 吗？')) return;
+            btn.disabled = true;
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 取消中...';
+            fetch('/api/model/unpublish', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: projectName, version: version })
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                if (data.success) {
+                    showToast(data.message);
+                    loadModelInfo();
+                } else {
+                    btn.innerHTML = originalHtml;
+                    showToast(data.error || '取消发布失败', 'error');
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                showToast('取消发布失败: ' + err.message, 'error');
             });
         }
 

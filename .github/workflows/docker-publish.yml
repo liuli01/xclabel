@@ -6,8 +6,10 @@ on:
     tags: ['v*.*.*']
 
 jobs:
-  build:
+  version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -16,24 +18,56 @@ jobs:
         id: version
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            # 从 tag 提取版本号
             VERSION=${GITHUB_REF#refs/tags/}
             echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "triggered_by=tag" >> $GITHUB_OUTPUT
             echo "Version from tag: $VERSION"
           else
-            # 从 commit message 提取版本号 (如 v1.0.0)
             VERSION=$(git log -1 --pretty=%B | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
             if [ -n "$VERSION" ]; then
               echo "version=$VERSION" >> $GITHUB_OUTPUT
-              echo "triggered_by=commit" >> $GITHUB_OUTPUT
               echo "Version from commit: $VERSION"
             else
               echo "version=" >> $GITHUB_OUTPUT
-              echo "triggered_by=latest" >> $GITHUB_OUTPUT
               echo "No version found, will push latest only"
             fi
           fi
+
+  build:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: server-cpu
+            image: liuli01/xclabel-server
+            dockerfile: Dockerfile.server.cpu
+            context: .
+            suffix: cpu
+          - name: server-gpu
+            image: liuli01/xclabel-server
+            dockerfile: Dockerfile.server.gpu
+            context: .
+            suffix: gpu
+          - name: nndeploy
+            image: liuli01/xclabel-nndeploy
+            dockerfile: nndeploy-app/Dockerfile
+            context: .
+            suffix: ""
+          - name: deploy-cpu
+            image: liuli01/xclabel-deploy
+            dockerfile: Dockerfile.deploy.cpu
+            context: .
+            suffix: cpu
+          - name: deploy-gpu
+            image: liuli01/xclabel-deploy
+            dockerfile: Dockerfile.deploy.gpu
+            context: .
+            suffix: gpu
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
@@ -41,27 +75,23 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: liuli01/${{ github.event.repository.name }}
+          images: ${{ matrix.image }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
             type=sha
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
-            type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.version != '' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' && matrix.suffix == '' }}
+            type=raw,value=${{ matrix.suffix }}-latest,enable=${{ github.ref == 'refs/heads/master' && matrix.suffix != '' }}
+            type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.version != '' && matrix.suffix == '' }}
+            type=raw,value=${{ matrix.suffix }}-${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.version != '' && matrix.suffix != '' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: .
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Deploy to production (optional)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: |
-          echo "Deploying to production..."

@@ -191,9 +191,6 @@
                 <h1><span class="x">x</span>clabel <span class="version">{{ version }}</span></h1>
             </div>
             <div class="nav-buttons">
-                <button id="aiConfigBtn" class="btn btn-warning">
-                    <i class="fas fa-cog"></i> AI配置
-                </button>
                 <button id="settingsBtn" class="btn btn-info">
                     <i class="fas fa-cog"></i> 设置
                 </button>
@@ -551,14 +548,6 @@
                 }
                 renameProject(oldName, newName);
             });
-
-            // AI配置按钮
-            const aiConfigBtn = document.getElementById('aiConfigBtn');
-            if (aiConfigBtn) {
-                aiConfigBtn.addEventListener('click', function() {
-                    window.location.href = '/ai-config';
-                });
-            }
 
             // 设置按钮
             const settingsBtn = document.getElementById('settingsBtn');

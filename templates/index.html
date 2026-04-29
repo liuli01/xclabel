@@ -15,9 +15,6 @@
                 <h1 style="cursor: pointer;" onclick="window.location.href='/projects'"><span class="x">x</span>clabel <span class="version">{{ version }}</span></h1>
             </div>
             <div class="nav-buttons">
-                <button id="backToProjectsBtn" class="btn btn-secondary" title="返回工程管理">
-                    <i class="fas fa-arrow-left"></i> 返回工程
-                </button>
                 <span id="currentProjectDisplay" class="current-project-display" title="当前工程"></span>
                 <button id="openFolderBtn" class="btn btn-primary">
                     <i class="fas fa-upload"></i> 添加数据集
@@ -38,8 +35,14 @@
                 <button id="exportBtn" class="btn btn-success">
                     <i class="fas fa-download"></i> 导出数据集
                 </button>
+                <button id="aiConfigBtn" class="btn btn-info">
+                    <i class="fas fa-cog"></i> AI配置
+                </button>
                 <button id="aiLabelBtn" class="btn btn-primary">
                     <i class="fas fa-robot"></i> AI标注
+                </button>
+                <button id="backToProjectsBtn" class="btn btn-secondary" title="返回工程管理">
+                    <i class="fas fa-arrow-left"></i> 返回工程
                 </button>
 
             </div>
@@ -416,7 +419,7 @@
                             </div>
                         </div>
                         <div class="form-row">
-                            <div class="form-group">
+                            <div class="form-group" style="flex: 2;">
                                 <label for="apiUrl">API地址</label>
                                 <input type="text" id="apiUrl" class="form-control" readonly>
                             </div>
@@ -541,6 +544,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // 获取DOM元素
+            const aiConfigBtn = document.getElementById('aiConfigBtn');
             const aiLabelBtn = document.getElementById('aiLabelBtn');
             const aiLabelModal = document.getElementById('aiLabelModal');
             const closeBtn = aiLabelModal.querySelector('.close');
@@ -559,13 +563,76 @@
             
             // 选中的标签
             let selectedLabel = null;
-            
+            // 从后端加载的API密钥（不放在password输入框里，避免浏览器安全机制清空）
+            let loadedApiKey = '';
+
+            // 打开AI配置页面
+            aiConfigBtn.addEventListener('click', function() {
+                window.open('/ai-config', '_blank');
+            });
+
             // 打开AI标注弹框
             aiLabelBtn.addEventListener('click', function() {
-                loadApiConfig();
-                loadLabels();
+                startBtn.disabled = true;
+                startBtn.textContent = '加载配置中...';
                 aiLabelModal.style.display = 'block';
+                Promise.all([loadApiConfigPromise(), loadLabelsPromise()]).then(() => {
+                    startBtn.disabled = false;
+                    startBtn.textContent = '开始执行';
+                });
             });
+
+            function loadApiConfigPromise() {
+                return new Promise((resolve) => {
+                    fetch('/api/load-api-config')
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.success) {
+                                const config = data.config;
+                                apiTool.value = config.inferenceTool || 'LMStudio';
+                                apiModel.value = config.model || '';
+                                apiUrl.value = config.apiUrl || '';
+                                loadedApiKey = config.apiKey || '';
+                                apiTimeout.value = config.timeout || 30;
+                                aiPrompt.value = config.prompt || '';
+                            }
+                            resolve();
+                        })
+                        .catch(() => resolve());
+                });
+            }
+
+            function loadLabelsPromise() {
+                return new Promise((resolve) => {
+                    fetch('/api/classes')
+                        .then(r => r.json())
+                        .then(classes => {
+                            labelList.innerHTML = '';
+                            classes.forEach(cls => {
+                                const labelItem = document.createElement('div');
+                                labelItem.className = 'label-item';
+                                const radio = document.createElement('input');
+                                radio.type = 'radio';
+                                radio.name = 'label';
+                                radio.value = cls.name;
+                                radio.id = `label_${cls.name}`;
+                                const label = document.createElement('label');
+                                label.htmlFor = radio.id;
+                                label.textContent = cls.name;
+                                labelItem.appendChild(radio);
+                                labelItem.appendChild(label);
+                                labelItem.addEventListener('click', function() {
+                                    document.querySelectorAll('.label-item').forEach(item => item.classList.remove('selected'));
+                                    labelItem.classList.add('selected');
+                                    selectedLabel = cls.name;
+                                });
+                                labelList.appendChild(labelItem);
+                            });
+                            resolve();
+                        })
+                        .catch(() => resolve());
+                });
+            }
             
             // 关闭AI标注弹框
             function closeModal() {
@@ -581,70 +648,6 @@
                     closeModal();
                 }
             });
-            
-            // 加载API配置
-            function loadApiConfig() {
-                fetch('/api/load-api-config')
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            const config = data.config;
-                            apiTool.value = config.inferenceTool || '';
-                            apiModel.value = config.model || '';
-                            apiUrl.value = config.apiUrl || '';
-                            apiTimeout.value = config.timeout || '';
-                            aiPrompt.value = config.prompt || '';
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Failed to load API config:', error);
-                        showToast('加载API配置失败', 'error');
-                    });
-            }
-            
-            // 加载标签列表
-            function loadLabels() {
-                fetch('/api/classes')
-                    .then(response => response.json())
-                    .then(classes => {
-                        labelList.innerHTML = '';
-                        
-                        classes.forEach(cls => {
-                            const labelItem = document.createElement('div');
-                            labelItem.className = 'label-item';
-                            
-                            const radio = document.createElement('input');
-                            radio.type = 'radio';
-                            radio.name = 'label';
-                            radio.value = cls.name;
-                            radio.id = `label_${cls.name}`;
-                            
-                            const label = document.createElement('label');
-                            label.htmlFor = radio.id;
-                            label.textContent = cls.name;
-                            
-                            labelItem.appendChild(radio);
-                            labelItem.appendChild(label);
-                            
-                            // 添加选择事件
-                            labelItem.addEventListener('click', function() {
-                                // 移除其他选中状态
-                                document.querySelectorAll('.label-item').forEach(item => {
-                                    item.classList.remove('selected');
-                                });
-                                // 添加当前选中状态
-                                labelItem.classList.add('selected');
-                                selectedLabel = cls.name;
-                            });
-                            
-                            labelList.appendChild(labelItem);
-                        });
-                    })
-                    .catch(error => {
-                        console.error('Failed to load labels:', error);
-                        showToast('加载标签失败', 'error');
-                    });
-            }
             
             // 开始执行AI标注
             startBtn.addEventListener('click', function() {
@@ -681,7 +684,7 @@
                     inferenceTool: apiTool.value,
                     model: apiModel.value,
                     apiUrl: apiUrl.value,
-                    apiKey: '', // 不显示密钥
+                    apiKey: loadedApiKey,
                     timeout: parseInt(apiTimeout.value),
                     prompt: aiPrompt.value
                 };

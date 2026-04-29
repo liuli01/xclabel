@@ -400,10 +400,10 @@ class AIAutoLabeler:
 
     def analyze_image(self, image_path: str) -> Dict[str, Any]:
         """调用大模型API分析图像
-        
+
         Args:
             image_path: 图像文件路径
-            
+
         Returns:
             大模型返回的分析结果
         """
@@ -437,10 +437,17 @@ class AIAutoLabeler:
 
         # 确保API地址以正确的端点结尾
         api_endpoint = self.model_api_url
-        if api_endpoint.endswith("/v1"):
+        if api_endpoint.endswith("/chat/completions"):
+            pass
+        elif api_endpoint.endswith("/v1"):
             api_endpoint = f"{api_endpoint}/chat/completions"
-        elif not api_endpoint.endswith("/chat/completions"):
-            api_endpoint = f"{api_endpoint.rstrip('/')}/v1/chat/completions"
+        else:
+            from urllib.parse import urlparse
+            path = urlparse(api_endpoint).path.rstrip('/')
+            if not path:
+                api_endpoint = f"{api_endpoint.rstrip('/')}/v1/chat/completions"
+            else:
+                api_endpoint = f"{api_endpoint.rstrip('/')}/chat/completions"
 
         # 读取图像并压缩，减少base64编码后的大小
         img = cv2.imread(image_path)
@@ -506,8 +513,15 @@ class AIAutoLabeler:
             logging.info(f"API响应: {json.dumps(result, ensure_ascii=False)}")
 
             # 解析API返回的结果
+            # 兼容标准OpenAI格式（choices在顶层）和包装格式（choices在data内）
+            choices = None
             if "choices" in result and len(result["choices"]) > 0:
-                content = result["choices"][0]["message"]["content"]
+                choices = result["choices"]
+            elif "data" in result and "choices" in result["data"] and len(result["data"]["choices"]) > 0:
+                choices = result["data"]["choices"]
+
+            if choices:
+                content = choices[0]["message"]["content"]
                 # 尝试解析JSON内容
                 try:
                     # 去除Markdown格式标记
