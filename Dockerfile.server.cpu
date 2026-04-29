@@ -31,6 +31,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 RUN uv add opencv-python-headless
 
+
 # # 创建 YOLO 插件虚拟环境并安装对应版本 ultralytics
 # RUN python3 -m venv plugins/yolo8/venv \
 #     && plugins/yolo8/venv/bin/pip install --upgrade pip \
