@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-    python3.12 python3.12-pip \
+    python3.12 python3.12-venv \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 libgomp1 \
+    && python3.12 -m ensurepip --upgrade \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
