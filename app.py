@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import os
+import requests
 import shutil
 import subprocess
 import tempfile
@@ -4081,10 +4082,14 @@ def train_model_info():
                 if yolo_training_task.project_name == project_name and getattr(yolo_training_task, 'version', None) == name:
                     is_training = True
                     train_progress = yolo_training_task.progress
+            # Check if published to nndeploy-app
+            published = os.path.exists(os.path.join('resources', 'models', f'{project_name}_{name}.onnx'))
+
             versions.append({
                 'version': name,
                 'exists': os.path.exists(v_best),
                 'onnx_exists': os.path.exists(os.path.join(vdir, 'best.onnx')),
+                'published': published,
                 'model_path': v_best if os.path.exists(v_best) else None,
                 'is_training': is_training,
                 'train_progress': train_progress,
@@ -4246,6 +4251,67 @@ def model_versions():
     return jsonify({'versions': versions})
 
 
+@app.route('/api/model/publish', methods=['POST'])
+def model_publish():
+    """Publish a model version to nndeploy-app resources."""
+    data = request.json or {}
+    project_name = data.get('project')
+    version = data.get('version')
+    if not project_name or not version:
+        return jsonify({'error': 'Missing project or version parameter'}), 400
+
+    project_path = get_project_path(project_name)
+    version_dir = os.path.join(project_path, 'models', version)
+    onnx_path = os.path.join(version_dir, 'best.onnx')
+
+    # Ensure ONNX exists
+    if not os.path.exists(onnx_path):
+        # Try to export first
+        model_path = os.path.join(version_dir, 'best.pt')
+        if not os.path.exists(model_path):
+            return jsonify({'error': 'Model file not found'}), 404
+
+        info_path = os.path.join(version_dir, 'model_info.json')
+        yolo_version = 'yolo11'
+        if os.path.exists(info_path):
+            try:
+                with open(info_path, 'r', encoding='utf-8') as f:
+                    info = json.load(f)
+                    yolo_version = info.get('yolo_version', 'yolo11')
+            except Exception:
+                pass
+
+        python_path = get_ultralytics_python_path(yolo_version)
+        cmd = [
+            python_path,
+            os.path.join(app.root_path, 'plugins', 'export_yolo.py'),
+            '--model', model_path,
+            '--output', onnx_path,
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if result.returncode != 0 or not os.path.exists(onnx_path):
+                err = result.stderr[-800:] if result.stderr else result.stdout[-800:]
+                return jsonify({'error': f'ONNX export failed: {err}'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Export exception: {str(e)}'}), 500
+
+    # Copy to nndeploy resources
+    resources_models_dir = os.path.join('resources', 'models')
+    os.makedirs(resources_models_dir, exist_ok=True)
+    target_path = os.path.join(resources_models_dir, f'{project_name}_{version}.onnx')
+
+    try:
+        shutil.copy2(onnx_path, target_path)
+        return jsonify({
+            'success': True,
+            'message': f'Model published to resources/models/{project_name}_{version}.onnx',
+            'path': target_path,
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to copy model: {str(e)}'}), 500
+
+
 @app.route('/api/admin/rebuild-metadata')
 def rebuild_metadata():
     """一次性修复：遍历所有模型版本，从 args.yaml -> data.yaml 读取 names 并补全 classes。"""
@@ -4361,6 +4427,42 @@ def workflow_list():
                 })
 
     return jsonify({'workflows': workflows})
+
+
+@app.route('/api/nndeploy/workflows')
+def nndeploy_workflows():
+    """Proxy to nndeploy-app workflow list API."""
+    nndeploy_url = os.environ.get('NNDEPLOY_APP_URL', 'http://127.0.0.1:8002')
+    try:
+        resp = requests.get(f'{nndeploy_url}/api/workflows', timeout=30)
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': 'nndeploy-app is not accessible'}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'nndeploy-app request timed out'}), 504
+    except Exception as e:
+        return jsonify({'error': f'Failed to fetch workflows: {str(e)}'}), 502
+
+
+@app.route('/api/nndeploy/workflow/download')
+def nndeploy_workflow_download():
+    """Proxy to nndeploy-app workflow download API."""
+    workflow_id = request.args.get('id')
+    if not workflow_id:
+        return jsonify({'error': 'Missing id parameter'}), 400
+
+    nndeploy_url = os.environ.get('NNDEPLOY_APP_URL', 'http://127.0.0.1:8002')
+    try:
+        resp = requests.get(f'{nndeploy_url}/api/workflow/download/{workflow_id}', timeout=30)
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': 'nndeploy-app is not accessible'}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'nndeploy-app request timed out'}), 504
+    except Exception as e:
+        return jsonify({'error': f'Failed to download workflow: {str(e)}'}), 502
 
 
 @app.route('/train')

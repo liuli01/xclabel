@@ -13,10 +13,28 @@ services:
       - ./static/annotations:/app/static/annotations
       # YOLO11 plugin directory
       - ./plugins:/app/plugins
+      # Shared nndeploy resources
+      - nndeploy-resources:/app/resources
     environment:
       - FLASK_HOST=0.0.0.0
       - FLASK_PORT=5000
       - FLASK_DEBUG=false
+      - NNDEPLOY_APP_URL=http://nndeploy-app:8002
+    restart: unless-stopped
+
+  nndeploy-app:
+    build:
+      context: .
+      dockerfile: nndeploy-app/Dockerfile
+    container_name: nndeploy-app
+    command: nndeploy-app --port 8002 --resources /app/resources
+    ports:
+      - "8002:8002"
+    volumes:
+      # Shared nndeploy resources
+      - nndeploy-resources:/app/resources
+    environment:
+      - NNDEPLOY_RESOURCES=/app/resources
     restart: unless-stopped
 
   xclabel-deploy-cpu:
@@ -63,3 +81,4 @@ services:
 volumes:
   deploy-cache-cpu:
   deploy-cache-gpu:
+  nndeploy-resources:

@@ -1,0 +1,41 @@
+services:
+  xclabel-deploy-cpu:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.cpu
+    container_name: xclabel-deploy-cpu
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_URL=${SERVER_URL:-http://xclabel-server:5000}
+      - CACHE_DIR=/app/cache
+      - MAX_ENGINES=10
+    volumes:
+      - deploy-cache-cpu:/app/cache
+    restart: unless-stopped
+
+  xclabel-deploy-gpu:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.gpu
+    container_name: xclabel-deploy-gpu
+    ports:
+      - "8001:8000"
+    environment:
+      - SERVER_URL=${SERVER_URL:-http://xclabel-server:5000}
+      - CACHE_DIR=/app/cache
+      - MAX_ENGINES=5
+    volumes:
+      - deploy-cache-gpu:/app/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  deploy-cache-cpu:
+  deploy-cache-gpu:

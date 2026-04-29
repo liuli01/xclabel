@@ -4,7 +4,28 @@
       "Bash(.venv/Scripts/python -c \"import psutil; print\\('psutil version:', psutil.__version__\\)\")",
       "Bash(.venv/Scripts/python -c \"import flask; import cv2; import numpy; import PIL; import psutil; import requests; print\\('All core imports OK'\\)\")",
       "Bash(docker --version)",
-      "Bash(docker build *)"
+      "Bash(docker build *)",
+      "Bash(curl -s -X POST http://127.0.0.1:8000/load/model -H \"Content-Type: application/json\" -d '{\"project_id\": \"test\", \"model_version\": \"20260428_175439\", \"server_url\": \"http://host.docker.internal:9924\"}')",
+      "Bash(curl -s http://127.0.0.1:8000/engines)",
+      "Bash(curl -s -X POST http://127.0.0.1:8000/infer -H \"Content-Type: application/json\" -d '{\"engine_id\": \"test/20260428_175439\", \"image_url\": \"https://picsum.photos/640/480\", \"confidence_threshold\": 0.5}')",
+      "Bash(curl -s http://127.0.0.1:9924/api/health)",
+      "Bash(ipconfig)",
+      "Bash(curl -s -X POST http://127.0.0.1:8000/load/model -H \"Content-Type: application/json\" -d '{\"project_id\": \"test\", \"model_version\": \"20260428_175439\", \"server_url\": \"http://192.168.200.138:9924\"}')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); nodes=d.get\\('node_repository_',[]\\); [print\\(n.get\\('key_'\\), n.get\\('param_',{}\\).get\\('model_value_'\\)\\) for n in nodes if 'Infer' in n.get\\('key_',''\\)]\")",
+      "Bash(curl -s http://127.0.0.1:8002/api/workflows)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(w.get\\('id'\\), w.get\\('name'\\)\\) for w in d.get\\('result',[]\\)]\")",
+      "Bash(curl -s http://127.0.0.1:8002/api/workflow/download/__TRACKED_VAR__)",
+      "Bash(curl -s -X POST http://127.0.0.1:8000/load/workflow -H \"Content-Type: application/json\" -d '{\"project_id\": \"test\", \"workflow_id\": \"3dd0f848-7c8e-4932-87d1-b97ab3af29d2\", \"server_url\": \"http://192.168.200.138:9924\"}')",
+      "Bash(curl -s \"http://127.0.0.1:9924/api/nndeploy/workflows\")",
+      "Bash(curl -s \"http://127.0.0.1:9924/api/nndeploy/workflow/download?id=3dd0f848-7c8e-4932-87d1-b97ab3af29d2\")",
+      "Bash(curl -s \"http://127.0.0.1:8002/api/workflow/download/3dd0f848-7c8e-4932-87d1-b97ab3af29d2\")",
+      "Bash(sqlite3 e:/coding/project/xclabel/resources/db/nndeploy.db \"SELECT id, name_, workflow_file_path_ FROM workflow;\")",
+      "Bash(python3 -c \"import sqlite3; conn=sqlite3.connect\\('e:/coding/project/xclabel/resources/db/nndeploy.db'\\); cur=conn.cursor\\(\\); cur.execute\\('SELECT id, name_, workflow_file_path_ FROM workflow'\\); [print\\(r\\) for r in cur.fetchall\\(\\)]\")",
+      "Bash(python3 -c \"import sqlite3; conn=sqlite3.connect\\('e:/coding/project/xclabel/resources/db/nndeploy.db'\\); cur=conn.cursor\\(\\); cur.execute\\(\\\\\"SELECT name FROM sqlite_master WHERE type='table'\\\\\"\\); [print\\(r[0]\\) for r in cur.fetchall\\(\\)]\")",
+      "Bash(python3 -c \"import sqlite3; conn=sqlite3.connect\\('e:/coding/project/xclabel/resources/db/nndeploy.db'\\); cur=conn.cursor\\(\\); cur.execute\\('SELECT id, name_, workflow_file_path_ FROM workflows'\\); [print\\(r\\) for r in cur.fetchall\\(\\)]\")",
+      "Bash(python3 -c \"import sqlite3; conn=sqlite3.connect\\('e:/coding/project/xclabel/resources/db/nndeploy.db'\\); cur=conn.cursor\\(\\); cur.execute\\('PRAGMA table_info\\(workflows\\)'\\); [print\\(r\\) for r in cur.fetchall\\(\\)]\")",
+      "Bash(python3 -c \"import sqlite3; conn=sqlite3.connect\\('e:/coding/project/xclabel/resources/db/nndeploy.db'\\); cur=conn.cursor\\(\\); cur.execute\\('SELECT id, path, name FROM workflows'\\); [print\\(r\\) for r in cur.fetchall\\(\\)]\")",
+      "Bash(curl -s \"http://127.0.0.1:9924/api/nndeploy/workflow/download?id=a3f2081e-86fc-4091-bb83-0e2e7375763e\")"
     ]
   }
 }

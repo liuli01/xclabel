@@ -1,3 +1,4 @@
+import json
 import os
 import zipfile
 from io import BytesIO
@@ -34,25 +35,27 @@ class ServerClient:
         response.raise_for_status()
         return response.json().get("versions", [])
 
-    def download_workflow(self, project_id: str, workflow_name: str,
-                          cache_dir: str) -> str:
-        url = f"{self.server_url}/api/workflow/export"
-        params = {"project": project_id, "name": workflow_name}
+    def list_workflows(self) -> List[Dict]:
+        """List nndeploy workflows from server."""
+        url = f"{self.server_url}/api/nndeploy/workflows"
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        # nndeploy-app returns {flag, message, result: [...]}
+        workflows = data.get("result", []) if "result" in data else data.get("workflows", [])
+        return workflows
+
+    def download_workflow(self, workflow_id: str, cache_dir: str) -> str:
+        """Download nndeploy workflow JSON by id."""
+        url = f"{self.server_url}/api/nndeploy/workflow/download"
+        params = {"id": workflow_id}
         response = requests.get(url, params=params, timeout=30)
         response.raise_for_status()
 
-        workflow_path = f"{cache_dir}/workflows/{project_id}_{workflow_name}.json"
+        workflow_path = f"{cache_dir}/workflows/{workflow_id}.json"
         os.makedirs(os.path.dirname(workflow_path), exist_ok=True)
 
         with open(workflow_path, "w", encoding="utf-8") as f:
-            import json
             json.dump(response.json(), f, ensure_ascii=False, indent=2)
 
         return workflow_path
-
-    def list_workflows(self, project_id: str) -> List[Dict]:
-        url = f"{self.server_url}/api/workflow/list"
-        params = {"project": project_id}
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        return response.json().get("workflows", [])

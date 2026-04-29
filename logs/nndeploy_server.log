@@ -1,3 +1,195 @@
 2026-04-28 21:56:46,362 WorkerProcess Worker PID=101324 started
 2026-04-28 21:58:46,064 MainProcess [WebSocket] client disconnected
 2026-04-28 21:58:46,065 MainProcess [WebSocket] client disconnected
+2026-04-28 22:40:21,985 MainProcess [WebSocket] client disconnected
+2026-04-28 22:40:21,987 MainProcess [WebSocket] client disconnected
+2026-04-28 22:41:30,642 MainProcess [WebSocket] client disconnected
+2026-04-28 22:41:30,642 MainProcess [WebSocket] client disconnected
+2026-04-28 22:42:26,436 MainProcess [WebSocket] client disconnected
+2026-04-28 22:42:26,436 MainProcess [WebSocket] client disconnected
+2026-04-28 22:43:11,383 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] E/nndeploy_default_str: nndeploy::dag::topoSortDFS [File D:\a\nndeploy\nndeploy\framework\source\nndeploy\dag\util.cc][Line 322] No start node found in graphE/nndeploy_default_str: nndeploy::dag::SequentialExecutor::init [File D:\a\nndeploy\nndeploy\framework\source\nndeploy\dag\executor\sequential_executor.cc][Line 15] topoSortDFS failed!
+2026-04-28 22:43:11,383 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] E/nndeploy_default_str: nndeploy::dag::Graph::executor [File D:\a\nndeploy\nndeploy\framework\source\nndeploy\dag\graph.cc][Line 2314] executor init failed!
+2026-04-28 22:43:11,383 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] E/nndeploy_default_str: nndeploy::dag::Graph::init [File D:\a\nndeploy\nndeploy\framework\source\nndeploy\dag\graph.cc][Line 1327] graph executor failed!
+2026-04-28 22:43:11,447 MainProcess [notify_task_done] Event loop ready or running
+2026-04-28 22:45:56,421 MainProcess [WebSocket] client disconnected
+2026-04-28 22:45:56,422 MainProcess [WebSocket] client disconnected
+2026-04-28 23:18:02,963 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] Process WorkerProcess:
+2026-04-28 23:18:02,968 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] Traceback (most recent call last):
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "E:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\worker.py", line 107, in run
+    item = task_q.get(timeout=1.0)
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\queues.py", line 111, in get
+    if not self._poll(timeout):
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 257, in poll
+    return self._poll(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 346, in _poll
+    return bool(wait([self], timeout))
+                ~~~~^^^^^^^^^^^^^^^^^
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1096, in wait
+    ready_handles = _exhaustive_wait(waithandle_to_obj.keys(), timeout)
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1028, in _exhaustive_wait
+    res = _winapi.WaitForMultipleObjects(short_L, False, timeout)
+2026-04-28 23:18:02,970 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] KeyboardInterrupt
+2026-04-28 23:18:02,972 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] Exception ignored in atexit callback <function reset_all at 0x00000188D67E8360>
+2026-04-28 23:18:02,972 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] :
+2026-04-28 23:18:02,972 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] Traceback (most recent call last):
+2026-04-28 23:18:02,972 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\initialise.py", line 34, in reset_all
+2026-04-28 23:18:03,002 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] AnsiToWin32(orig_stdout).reset_all()
+2026-04-28 23:18:03,002 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc]   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\ansitowin32.py", line 189, in reset_all
+2026-04-28 23:18:03,012 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] self.wrapped.write(Style.RESET_ALL)
+2026-04-28 23:18:03,013 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] OSError
+2026-04-28 23:18:03,013 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] :
+2026-04-28 23:18:03,013 WorkerProcess [task_id=a128883b-66d7-4628-bb20-cef8349ca8fc] [WinError 1] 函数不正确。
+2026-04-28 23:18:03,167 MainProcess [DB] closed
+2026-04-28 23:18:08,296 WorkerProcess Worker PID=54152 started
+2026-04-28 23:23:55,033 WorkerProcess Process WorkerProcess:
+2026-04-28 23:23:55,035 WorkerProcess Traceback (most recent call last):
+2026-04-28 23:23:55,037 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+2026-04-28 23:23:55,037 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-28 23:23:55,037 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\worker.py", line 107, in run
+    item = task_q.get(timeout=1.0)
+2026-04-28 23:23:55,037 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\queues.py", line 111, in get
+    if not self._poll(timeout):
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:23:55,037 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 257, in poll
+    return self._poll(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:23:55,037 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 346, in _poll
+    return bool(wait([self], timeout))
+                ~~~~^^^^^^^^^^^^^^^^^
+2026-04-28 23:23:55,037 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1096, in wait
+    ready_handles = _exhaustive_wait(waithandle_to_obj.keys(), timeout)
+2026-04-28 23:23:55,037 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1028, in _exhaustive_wait
+    res = _winapi.WaitForMultipleObjects(short_L, False, timeout)
+2026-04-28 23:23:55,037 WorkerProcess KeyboardInterrupt
+2026-04-28 23:23:55,038 WorkerProcess Exception ignored in atexit callback <function reset_all at 0x0000023D29678360>
+2026-04-28 23:23:55,038 WorkerProcess :
+2026-04-28 23:23:55,038 WorkerProcess Traceback (most recent call last):
+2026-04-28 23:23:55,038 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\initialise.py", line 34, in reset_all
+2026-04-28 23:23:55,038 WorkerProcess AnsiToWin32(orig_stdout).reset_all()
+2026-04-28 23:23:55,038 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\ansitowin32.py", line 189, in reset_all
+2026-04-28 23:23:55,038 WorkerProcess self.wrapped.write(Style.RESET_ALL)
+2026-04-28 23:23:55,038 WorkerProcess OSError
+2026-04-28 23:23:55,038 WorkerProcess :
+2026-04-28 23:23:55,038 WorkerProcess [WinError 1] 函数不正确。
+2026-04-28 23:23:55,155 MainProcess [DB] closed
+2026-04-28 23:31:59,128 WorkerProcess Worker PID=64484 started
+2026-04-28 23:32:13,114 WorkerProcess Process WorkerProcess:
+2026-04-28 23:32:13,116 WorkerProcess Traceback (most recent call last):
+2026-04-28 23:32:13,117 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+2026-04-28 23:32:13,117 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-28 23:32:13,117 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\worker.py", line 107, in run
+    item = task_q.get(timeout=1.0)
+2026-04-28 23:32:13,117 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\queues.py", line 111, in get
+    if not self._poll(timeout):
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:32:13,117 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 257, in poll
+    return self._poll(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:32:13,117 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 346, in _poll
+    return bool(wait([self], timeout))
+                ~~~~^^^^^^^^^^^^^^^^^
+2026-04-28 23:32:13,117 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1096, in wait
+    ready_handles = _exhaustive_wait(waithandle_to_obj.keys(), timeout)
+2026-04-28 23:32:13,117 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1028, in _exhaustive_wait
+    res = _winapi.WaitForMultipleObjects(short_L, False, timeout)
+2026-04-28 23:32:13,117 WorkerProcess KeyboardInterrupt
+2026-04-28 23:32:13,118 WorkerProcess Exception ignored in atexit callback <function reset_all at 0x0000022DA05D8360>
+2026-04-28 23:32:13,118 WorkerProcess :
+2026-04-28 23:32:13,118 WorkerProcess Traceback (most recent call last):
+2026-04-28 23:32:13,118 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\initialise.py", line 34, in reset_all
+2026-04-28 23:32:13,118 WorkerProcess AnsiToWin32(orig_stdout).reset_all()
+2026-04-28 23:32:13,118 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\ansitowin32.py", line 189, in reset_all
+2026-04-28 23:32:13,119 WorkerProcess self.wrapped.write(Style.RESET_ALL)
+2026-04-28 23:32:13,119 WorkerProcess OSError
+2026-04-28 23:32:13,119 WorkerProcess :
+2026-04-28 23:32:13,119 WorkerProcess [WinError 1] 函数不正确。
+2026-04-28 23:32:13,251 MainProcess [DB] closed
+2026-04-28 23:32:37,240 WorkerProcess Worker PID=72956 started
+2026-04-28 23:32:47,471 WorkerProcess Process WorkerProcess:
+2026-04-28 23:32:47,473 WorkerProcess Traceback (most recent call last):
+2026-04-28 23:32:47,474 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+2026-04-28 23:32:47,474 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-28 23:32:47,474 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\worker.py", line 107, in run
+    item = task_q.get(timeout=1.0)
+2026-04-28 23:32:47,474 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\queues.py", line 111, in get
+    if not self._poll(timeout):
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:32:47,474 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 257, in poll
+    return self._poll(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:32:47,474 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 346, in _poll
+    return bool(wait([self], timeout))
+                ~~~~^^^^^^^^^^^^^^^^^
+2026-04-28 23:32:47,474 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1096, in wait
+    ready_handles = _exhaustive_wait(waithandle_to_obj.keys(), timeout)
+2026-04-28 23:32:47,474 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1028, in _exhaustive_wait
+    res = _winapi.WaitForMultipleObjects(short_L, False, timeout)
+2026-04-28 23:32:47,474 WorkerProcess KeyboardInterrupt
+2026-04-28 23:32:47,474 WorkerProcess Exception ignored in atexit callback <function reset_all at 0x000001C43DA28360>
+2026-04-28 23:32:47,475 WorkerProcess :
+2026-04-28 23:32:47,475 WorkerProcess Traceback (most recent call last):
+2026-04-28 23:32:47,475 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\initialise.py", line 34, in reset_all
+2026-04-28 23:32:47,475 WorkerProcess AnsiToWin32(orig_stdout).reset_all()
+2026-04-28 23:32:47,475 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\ansitowin32.py", line 189, in reset_all
+2026-04-28 23:32:47,475 WorkerProcess self.wrapped.write(Style.RESET_ALL)
+2026-04-28 23:32:47,475 WorkerProcess OSError
+2026-04-28 23:32:47,475 WorkerProcess :
+2026-04-28 23:32:47,476 WorkerProcess [WinError 1] 函数不正确。
+2026-04-28 23:32:47,660 MainProcess [DB] closed
+2026-04-28 23:33:18,391 WorkerProcess Worker PID=102804 started
+2026-04-28 23:33:36,977 WorkerProcess Process WorkerProcess:
+2026-04-28 23:33:36,979 WorkerProcess Traceback (most recent call last):
+2026-04-28 23:33:36,980 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+2026-04-28 23:33:36,980 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-28 23:33:36,980 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\nndeploy\server\worker.py", line 107, in run
+    item = task_q.get(timeout=1.0)
+2026-04-28 23:33:36,980 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\queues.py", line 111, in get
+    if not self._poll(timeout):
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:33:36,980 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 257, in poll
+    return self._poll(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+2026-04-28 23:33:36,980 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 346, in _poll
+    return bool(wait([self], timeout))
+                ~~~~^^^^^^^^^^^^^^^^^
+2026-04-28 23:33:36,980 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1096, in wait
+    ready_handles = _exhaustive_wait(waithandle_to_obj.keys(), timeout)
+2026-04-28 23:33:36,980 WorkerProcess   File "C:\Users\liuli\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\multiprocessing\connection.py", line 1028, in _exhaustive_wait
+    res = _winapi.WaitForMultipleObjects(short_L, False, timeout)
+2026-04-28 23:33:36,980 WorkerProcess KeyboardInterrupt
+2026-04-28 23:33:36,981 WorkerProcess Exception ignored in atexit callback <function reset_all at 0x000001329A988360>
+2026-04-28 23:33:36,981 WorkerProcess :
+2026-04-28 23:33:36,981 WorkerProcess Traceback (most recent call last):
+2026-04-28 23:33:36,981 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\initialise.py", line 34, in reset_all
+2026-04-28 23:33:36,981 WorkerProcess AnsiToWin32(orig_stdout).reset_all()
+2026-04-28 23:33:36,981 WorkerProcess   File "E:\coding\project\xclabel\.venv\Lib\site-packages\colorama\ansitowin32.py", line 189, in reset_all
+2026-04-28 23:33:36,981 WorkerProcess self.wrapped.write(Style.RESET_ALL)
+2026-04-28 23:33:36,982 WorkerProcess OSError
+2026-04-28 23:33:36,982 WorkerProcess :
+2026-04-28 23:33:36,982 WorkerProcess [WinError 1] 函数不正确。
+2026-04-28 23:33:37,179 MainProcess [DB] closed
+2026-04-29 00:29:30,251 WorkerProcess Worker PID=85288 started

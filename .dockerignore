@@ -27,8 +27,43 @@ build
 
 # Runtime data (will be mounted as volumes)
 uploads
-plugins
+projects
 static/annotations
+resources
+
+# Plugin build exclusions (venv/cache rebuilt in image, models allowed below)
+plugins/**/venv
+plugins/**/__pycache__
+
+# Model files - allow only plugin models for build context
+*.pt
+*.pth
+*.onnx
+*.weights
+!plugins/**/models/*.pt
+
+# Environment files
+.env
+.env.example
+.env.local
+
+# Logs
+logs
+*.log
+
+# Model files
+*.pt
+*.pth
+*.onnx
+*.weights
+
+# nndeploy-app (separate service)
+nndeploy-app
+
+# Cache
+.pytest_cache
+.ruff_cache
+.mypy_cache
 
 # Tests
 tests

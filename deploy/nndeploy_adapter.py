@@ -205,27 +205,98 @@ class NndeployAdapter:
 
         return {"detections": detections}
 
-    def infer_workflow(self, workflow_json: Dict, image: Any) -> Dict:
+    def infer_workflow(self, workflow_json: Dict, image: Any,
+                       project_id: str = None,
+                       server_client=None,
+                       cache_dir: str = None) -> Dict:
         if not self._available:
             raise RuntimeError("nndeploy is not installed")
 
-        # Convert image to numpy if needed
-        if hasattr(image, 'read'):
-            img = Image.open(image).convert('RGB')
-            img_array = np.array(img)
-        else:
-            img_array = image
+        # Parse workflow JSON to extract model path and inference parameters
+        model_path = None
+        score_threshold = 0.5
+        metadata = {}
 
-        # TODO: Execute workflow via nndeploy DAG
-        # dag.run_json is a module (CLI tool), not a direct function.
-        # Proper workflow execution requires constructing a GraphRunner
-        # with the workflow JSON and executing it. This is a placeholder
-        # that returns the workflow definition for debugging.
-        return {
-            "results": {
-                "workflow_name": workflow_json.get("name"),
-                "nodes": list(workflow_json.get("nodes", {}).keys()),
-                "image_shape": img_array.shape if hasattr(img_array, 'shape') else None,
-                "status": "placeholder - dag execution not yet implemented",
+        for node in workflow_json.get("node_repository_", []):
+            key = node.get("key_", "")
+            param = node.get("param_", {})
+
+            if "Infer" in key:
+                model_value = param.get("model_value_", [])
+                if model_value and model_value[0]:
+                    model_path = model_value[0]
+                # Extract device type
+                device_type_str = param.get("device_type_", "kDeviceTypeCodeCpu:0")
+
+            if "YoloPostProcess" in key:
+                score_threshold = param.get("score_threshold_", 0.5)
+                metadata["nms_threshold"] = param.get("nms_threshold_", 0.45)
+                metadata["num_classes"] = param.get("num_classes_", 80)
+                metadata["model_h"] = param.get("model_h_", 640)
+                metadata["model_w"] = param.get("model_w_", 640)
+                metadata["version"] = param.get("version_", 11)
+
+        if not model_path:
+            return {
+                "detections": [],
+                "error": "No model path found in workflow",
+                "workflow_name": workflow_json.get("name_"),
             }
-        }
+
+        # Handle relative paths from workflow JSON
+        if not os.path.isabs(model_path):
+            candidates = [
+                model_path,
+                os.path.join("/app", model_path),
+                os.path.join(os.getcwd(), model_path),
+            ]
+            for candidate in candidates:
+                if os.path.exists(candidate):
+                    model_path = candidate
+                    break
+
+        # Auto-download model from server if not found locally
+        if not os.path.exists(model_path) and project_id and server_client and cache_dir:
+            filename = os.path.basename(model_path)
+            if filename.startswith(project_id + "_") and filename.endswith(".onnx"):
+                version = filename[len(project_id) + 1:-5]
+                try:
+                    model_dir = server_client.download_model(
+                        project_id, version, cache_dir
+                    )
+                    downloaded_onnx = os.path.join(model_dir, "best.onnx")
+                    if os.path.exists(downloaded_onnx):
+                        model_path = downloaded_onnx
+                except Exception as e:
+                    print(f"Failed to download model {project_id}/{version}: {e}")
+
+        if not os.path.exists(model_path):
+            return {
+                "detections": [],
+                "error": f"Model file not found: {model_path}",
+                "workflow_name": workflow_json.get("name_"),
+            }
+
+        # Load model and run inference using existing infer_model logic
+        inference = self._inference.create_inference(
+            self._base.InferenceType.OnnxRuntime
+        )
+        param = self._inference.create_inference_param(
+            self._base.InferenceType.OnnxRuntime
+        )
+        param.set_model_value([model_path])
+        param.set_is_path(True)
+        inference.set_param(param)
+        inference.init()
+
+        try:
+            result = self.infer_model(
+                inference, image,
+                confidence_threshold=score_threshold,
+                metadata=metadata
+            )
+            result["workflow_name"] = workflow_json.get("name_")
+            return result
+        finally:
+            if hasattr(inference, 'deinit'):
+                inference.deinit()

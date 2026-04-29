@@ -2,6 +2,21 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python: FastAPI (deploy)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "main:app",
+                "--reload",
+                "--port",
+                "8000"
+            ],
+            "cwd": "${workspaceFolder}/deploy",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "jinja": true
+        },
+        {
             "name": "Python: Flask (xclabel)",
             "type": "debugpy",
             "request": "launch",
@@ -12,8 +27,10 @@
             },
             "args": [
                 "run",
-                "--host", "0.0.0.0",
-                "--port", "9924"
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "9924"
             ],
             "jinja": true,
             "python": "${workspaceFolder}/.venv/Scripts/python.exe",

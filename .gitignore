@@ -2,7 +2,12 @@
 .idea/
 # vs
 .vs
-plugins
+# Plugins - keep source, ignore runtime artifacts
+plugins/**/venv
+plugins/**/__pycache__
+plugins/**/models
+plugins/**/install_info.json
+
 uploads
 projects
 dist
@@ -13,5 +18,41 @@ app/__pycache__
 static/storage
 .pytest_cache
 .ruff_cache
+
+# Python
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+.coverage
+htmlcov/
+.tox
+.mypy_cache
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+deploy/logs/
+deploy/cache/
+
+# Model weights / binaries
+*.pt
+*.pth
+*.onnx
+*.weights
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.swp
+*.swo
 
 resources/

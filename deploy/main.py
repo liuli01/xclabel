@@ -37,7 +37,7 @@ class LoadModelRequest(BaseModel):
 
 class LoadWorkflowRequest(BaseModel):
     project_id: str
-    workflow_name: str
+    workflow_id: str
     server_url: Optional[str] = None
 
 
@@ -119,7 +119,7 @@ async def load_workflow(req: LoadWorkflowRequest):
     if not nndeploy_adapter.available:
         raise HTTPException(status_code=503, detail="nndeploy is not available")
 
-    engine_id = f"{req.project_id}/{req.workflow_name}"
+    engine_id = f"{req.project_id}/{req.workflow_id}"
 
     # Check if already loaded
     existing = await engine_pool.get(engine_id)
@@ -138,7 +138,7 @@ async def load_workflow(req: LoadWorkflowRequest):
     try:
         # Download workflow from server
         workflow_path = client.download_workflow(
-            req.project_id, req.workflow_name, CACHE_DIR
+            req.workflow_id, CACHE_DIR
         )
 
         # Load with nndeploy
@@ -197,7 +197,12 @@ async def infer(req: InferRequest):
                     metadata=engine.metadata
                 )
             else:
-                result = nndeploy_adapter.infer_workflow(engine.engine, image)
+                result = nndeploy_adapter.infer_workflow(
+                    engine.engine, image,
+                    project_id=engine.project_id,
+                    server_client=server_client,
+                    cache_dir=CACHE_DIR,
+                )
 
             inference_time_ms = round((time.time() - start_time) * 1000, 2)
             result["engine_id"] = req.engine_id
@@ -220,6 +225,16 @@ async def unload(req: UnloadRequest):
     if not success:
         raise HTTPException(status_code=404, detail=f"Engine not found: {req.engine_id}")
     return {"engine_id": req.engine_id, "status": "unloaded"}
+
+
+@app.get("/workflows")
+async def list_workflows():
+    """List available nndeploy workflows from server."""
+    try:
+        workflows = server_client.list_workflows()
+        return {"workflows": workflows}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to list workflows: {str(e)}")
 
 
 @app.post("/unload/all")

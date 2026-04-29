@@ -1,0 +1,67 @@
+name: Docker Publish
+
+on:
+  push:
+    branches: ["master"]
+    tags: ['v*.*.*']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from commit or tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            # 从 tag 提取版本号
+            VERSION=${GITHUB_REF#refs/tags/}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "triggered_by=tag" >> $GITHUB_OUTPUT
+            echo "Version from tag: $VERSION"
+          else
+            # 从 commit message 提取版本号 (如 v1.0.0)
+            VERSION=$(git log -1 --pretty=%B | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+            if [ -n "$VERSION" ]; then
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+              echo "triggered_by=commit" >> $GITHUB_OUTPUT
+              echo "Version from commit: $VERSION"
+            else
+              echo "version=" >> $GITHUB_OUTPUT
+              echo "triggered_by=latest" >> $GITHUB_OUTPUT
+              echo "No version found, will push latest only"
+            fi
+          fi
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: liuli01/${{ github.event.repository.name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.version != '' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Deploy to production (optional)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          echo "Deploying to production..."
