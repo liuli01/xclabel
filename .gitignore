@@ -46,6 +46,7 @@ deploy/cache/
 *.onnx
 *.weights
 
+
 # OS
 .DS_Store
 Thumbs.db
@@ -56,3 +57,4 @@ Thumbs.db
 *.swo
 
 resources/
+runs/
