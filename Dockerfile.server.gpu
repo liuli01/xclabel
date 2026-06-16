@@ -2,25 +2,28 @@
 # xclabel-server GPU Version
 # Stage 1: Builder - 使用 uv 构建主应用依赖
 # ============================================================
-FROM ghcr.io/astral-sh/uv:bookworm-slim AS builder
+FROM python:3.12-slim-bookworm AS builder
+
+ARG APT_MIRROR
+ARG PIP_INDEX_URL
+
+# 安装 uv
+RUN pip install --no-cache-dir uv -i ${PIP_INDEX_URL:-https://pypi.org/simple}
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PYTHON_INSTALL_DIR=/python \
-    UV_PYTHON_PREFERENCE=only-managed
-
-RUN uv python install 3.12 || uv python install 3.12
+    UV_INDEX_URL=${PIP_INDEX_URL:-https://pypi.org/simple}
 
 WORKDIR /app
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project --no-dev
+    uv sync --frozen --no-install-project --no-dev
 
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
+    uv sync --frozen --no-dev
 RUN uv add opencv-python-headless
 
 # ============================================================
@@ -28,26 +31,37 @@ RUN uv add opencv-python-headless
 # ============================================================
 FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04
 
-RUN apt-get update \
+ARG APT_MIRROR
+
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|archive.ubuntu.com|$APT_MIRROR|g" /etc/apt/sources.list 2>/dev/null; \
+    fi && \
+    apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
+        software-properties-common \
         libgl1 \
         libglib2.0-0 \
         libsm6 \
         libxext6 \
         libxrender1 \
         libgomp1 \
-        python3 \
-        python3-venv \
-        python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.12 \
+        python3.12-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.12 /usr/local/bin/python3
 
-RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
 
 WORKDIR /app
 
-COPY --from=builder --chown=appuser:appgroup /python /python
 COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
+
+# 修复 venv Python 链接指向 runtime 的 Python
+RUN ln -sf /usr/bin/python3 /app/.venv/bin/python
 
 COPY --chown=appuser:appgroup app.py .
 COPY --chown=appuser:appgroup AiUtils.py .
@@ -83,9 +97,10 @@ COPY --chown=appuser:appgroup plugins/ ./plugins/
 #     && cp /root/.ultralytics/models/yolo26n.pt plugins/yolo26/models/ 2>/dev/null || echo "yolo26n.pt will use local file if present"
 
 RUN mkdir -p uploads static/annotations \
-    && chown -R appuser:appgroup uploads plugins static/annotations
+    && chown -R appuser:appgroup /app uploads plugins static/annotations
 
 ENV PATH="/app/.venv/bin:$PATH" \
+    HOME=/app \
     PYTHONUNBUFFERED=1 \
     FLASK_HOST=0.0.0.0 \
     FLASK_PORT=5000 \

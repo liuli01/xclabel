@@ -292,9 +292,10 @@ app.config['STATIC_FOLDER'] = STATIC_FOLDER
 # 工程相关辅助函数
 
 def sanitize_project_name(name):
-    """清理工程名称，移除非法字符。"""
+    """校验工程名称：仅允许字母、数字、下划线。"""
     name = name.strip()
-    name = re.sub(r'[\\\\/:*?"<>|]', '', name)
+    if not re.match(r'^[a-zA-Z0-9_]+$', name):
+        return ''
     return name
 
 def get_current_project():
@@ -333,18 +334,6 @@ def ensure_default_project():
     if not os.path.exists(default_project_path):
         os.makedirs(default_project_path, exist_ok=True)
         os.makedirs(os.path.join(default_project_path, 'annotations'), exist_ok=True)
-
-        # 迁移旧数据
-        if os.path.exists(LEGACY_UPLOAD_FOLDER):
-            for item in os.listdir(LEGACY_UPLOAD_FOLDER):
-                src = os.path.join(LEGACY_UPLOAD_FOLDER, item)
-                dst = os.path.join(default_project_path, item)
-                if os.path.exists(dst):
-                    continue
-                if os.path.isdir(src):
-                    shutil.copytree(src, dst)
-                else:
-                    shutil.copy2(src, dst)
 
     # 确保默认工程的标注和类别文件存在
     ann_file = os.path.join(default_project_path, 'annotations', 'annotations.json')
@@ -398,8 +387,7 @@ def get_project_info(project_name):
             pass
     return {'task_type': 'detect'}
 
-# 启动时确保默认工程存在
-ensure_default_project()
+# 不再自动创建默认工程
 
 
 @app.route('/')
@@ -3024,6 +3012,8 @@ def create_project():
 def project_info():
     """获取指定工程的信息。"""
     project_name = request.args.get('project') or get_current_project()
+    if not project_name:
+        return jsonify({'name': '', 'task_type': 'detect'})
     project_path = get_project_path(project_name)
     if not os.path.exists(project_path):
         return jsonify({'error': '工程不存在'}), 404
@@ -3059,6 +3049,44 @@ def rename_project(name):
     return jsonify({'success': True, 'name': new_name})
 
 
+# 全局配置存储路径
+GLOBAL_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'global_config.json')
+
+def load_global_config():
+    """加载全局配置。"""
+    if os.path.exists(GLOBAL_CONFIG_FILE):
+        try:
+            with open(GLOBAL_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_global_config(config):
+    """保存全局配置。"""
+    os.makedirs(os.path.dirname(GLOBAL_CONFIG_FILE), exist_ok=True)
+    with open(GLOBAL_CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+
+@app.route('/api/global-config', methods=['GET'])
+def get_global_config():
+    """获取全局配置。"""
+    config = load_global_config()
+    return jsonify({'success': True, 'config': config})
+
+
+@app.route('/api/global-config', methods=['PUT'])
+def update_global_config():
+    """更新全局配置。"""
+    data = request.json or {}
+    config = load_global_config()
+    if 'nndeploy_app_url' in data:
+        config['nndeploy_app_url'] = data['nndeploy_app_url'].strip()
+    save_global_config(config)
+    return jsonify({'success': True})
+
+
 @app.route('/api/projects/<name>', methods=['DELETE'])
 def delete_project(name):
     """删除工程。"""
@@ -3068,10 +3096,9 @@ def delete_project(name):
 
     shutil.rmtree(project_path, ignore_errors=True)
 
-    # 如果删除的是当前工程，切换到 default
+    # 如果删除的是当前工程，清空当前工程（不再自动重建 default）
     if get_current_project() == name:
-        set_current_project('default')
-        ensure_default_project()
+        session.pop('current_project', None)
 
     return jsonify({'success': True})
 
@@ -3096,8 +3123,7 @@ def get_current_project_info():
     name = get_current_project()
     project_path = get_project_path(name)
     if not os.path.exists(project_path):
-        ensure_default_project()
-        name = 'default'
+        return jsonify({'name': '', 'image_count': 0})
 
     image_count = len([
         f for f in os.listdir(project_path)

@@ -191,6 +191,9 @@
                 <h1><span class="x">x</span>clabel <span class="version">{{ version }}</span></h1>
             </div>
             <div class="nav-buttons">
+                <button id="workflowBtn" class="btn btn-success">
+                    <i class="fas fa-project-diagram"></i> 工作流
+                </button>
                 <button id="settingsBtn" class="btn btn-info">
                     <i class="fas fa-cog"></i> 设置
                 </button>
@@ -225,8 +228,8 @@
             <form id="createProjectForm">
                 <div class="form-group">
                     <label for="projectNameInput">工程名称:</label>
-                    <input type="text" id="projectNameInput" placeholder="请输入工程名称" required>
-                    <small style="color: #888;">只允许字母、数字、中文、下划线和连字符</small>
+                    <input type="text" id="projectNameInput" placeholder="请输入工程名称" required pattern="[a-zA-Z0-9_]+">
+                    <small style="color: #888;">只允许字母、数字和下划线</small>
                 </div>
                 <div class="form-group">
                     <label for="projectTypeInput">工程类型:</label>
@@ -256,7 +259,8 @@
                 <input type="hidden" id="renameProjectOldName">
                 <div class="form-group">
                     <label for="renameProjectInput">新名称:</label>
-                    <input type="text" id="renameProjectInput" placeholder="请输入新名称" required>
+                    <input type="text" id="renameProjectInput" placeholder="请输入新名称" required pattern="[a-zA-Z0-9_]+">
+                    <small style="color: #888;">只允许字母、数字和下划线</small>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" id="cancelRenameProject">取消</button>
@@ -285,6 +289,19 @@
                 </div>
                 <div class="form-group">
                     <strong>开源主页:</strong> <a href="https://github.com/beixiaocai/xclabel" target="_blank" style="color: #339af0; text-decoration: none;">GitHub - beixiaocai/xclabel</a>
+                </div>
+            </div>
+
+            <!-- 工作流服务配置 -->
+            <div class="form-group" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef;">
+                <h3 style="margin: 0 0 10px 0; font-size: 1.1em; color: #555;"><i class="fas fa-project-diagram"></i> 工作流服务</h3>
+                <label for="globalNndeployUrl">nndeploy-app 地址:</label>
+                <input type="url" id="globalNndeployUrl" placeholder="http://localhost:8002" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+                <small style="color: #888;">配置工作流编排服务的访问地址</small>
+                <div style="margin-top: 10px;">
+                    <button type="button" class="btn btn-success" id="saveGlobalNndeployUrl">
+                        <i class="fas fa-save"></i> 保存地址
+                    </button>
                 </div>
             </div>
 
@@ -390,6 +407,7 @@
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadProjects();
+            loadGlobalConfig();
             setupEventListeners();
             // 初始化设置面板（YOLO模型复选框、环境状态等）
             if (typeof updateYoloModelCheckboxes === 'function') updateYoloModelCheckboxes();
@@ -525,7 +543,6 @@
             document.getElementById('cancelRenameProject').addEventListener('click', function() {
                 document.getElementById('renameProjectModal').style.display = 'none';
             });
-
             // 创建工程表单
             document.getElementById('createProjectForm').addEventListener('submit', function(e) {
                 e.preventDefault();
@@ -553,6 +570,18 @@
             const settingsBtn = document.getElementById('settingsBtn');
             if (settingsBtn && typeof showSettingsModal === 'function') {
                 settingsBtn.addEventListener('click', showSettingsModal);
+            }
+
+            // 工作流按钮
+            const workflowBtn = document.getElementById('workflowBtn');
+            if (workflowBtn) {
+                workflowBtn.addEventListener('click', openWorkflow);
+            }
+
+            // 保存全局 nndeploy-app 地址
+            const saveGlobalNndeployUrlBtn = document.getElementById('saveGlobalNndeployUrl');
+            if (saveGlobalNndeployUrlBtn) {
+                saveGlobalNndeployUrlBtn.addEventListener('click', saveGlobalNndeployUrl);
             }
 
             // YOLO环境安装/卸载
@@ -600,6 +629,61 @@
             document.getElementById('renameProjectInput').value = name;
             document.getElementById('renameProjectModal').style.display = 'block';
             document.getElementById('renameProjectInput').focus();
+        }
+
+        // 全局配置缓存
+        let globalConfig = {};
+
+        // 加载全局配置
+        function loadGlobalConfig() {
+            fetch('/api/global-config')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.config) {
+                        globalConfig = data.config;
+                        document.getElementById('globalNndeployUrl').value = data.config.nndeploy_app_url || '';
+                    }
+                })
+                .catch(error => console.error('加载全局配置失败:', error));
+        }
+
+        // 显示设置模态框
+        function showSettingsModal() {
+            loadGlobalConfig();
+            document.getElementById('settingsModal').style.display = 'block';
+        }
+
+        // 保存全局 nndeploy-app 地址
+        function saveGlobalNndeployUrl() {
+            const url = document.getElementById('globalNndeployUrl').value.trim();
+            fetch('/api/global-config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nndeploy_app_url: url })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showToast(data.error, 'error');
+                    return;
+                }
+                globalConfig.nndeploy_app_url = url;
+                showToast('地址已保存');
+            })
+            .catch(error => {
+                console.error('保存全局配置失败:', error);
+                showToast('保存失败', 'error');
+            });
+        }
+
+        // 打开工作流页面
+        function openWorkflow() {
+            const url = globalConfig.nndeploy_app_url || '';
+            if (url) {
+                window.open(url, '_blank');
+            } else {
+                showToast('请先配置工作流地址', 'error');
+            }
         }
 
         // 创建工程

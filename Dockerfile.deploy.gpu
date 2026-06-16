@@ -3,10 +3,15 @@
 # ============================================
 FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
+ARG APT_MIRROR
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Python 3.12
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|archive.ubuntu.com|$APT_MIRROR|g" /etc/apt/sources.list 2>/dev/null; \
+    fi && \
+    apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update \
