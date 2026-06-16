@@ -1,10 +1,11 @@
 name: Docker Publish - All Images
 
-# 打 tag 或手动触发：一次性构建所有镜像
+# 打 tag 或手动触发：构建并推送至 ghcr.io 及 Docker Hub
 on:
   push:
     tags: ['v*.*.*']
   workflow_dispatch:
+
 
 jobs:
   version:
@@ -41,30 +42,25 @@ jobs:
       matrix:
         include:
           - name: server-cpu
-            image: xclabel-server
+            image: xclabel-server-cpu
             dockerfile: Dockerfile.server.cpu
             context: .
-            suffix: cpu
           - name: server-gpu
-            image: xclabel-server
+            image: xclabel-server-gpu
             dockerfile: Dockerfile.server.gpu
             context: .
-            suffix: gpu
           - name: nndeploy
             image: xclabel-nndeploy
             dockerfile: nndeploy-app/Dockerfile
             context: .
-            suffix: ""
           - name: deploy-cpu
-            image: xclabel-deploy
+            image: xclabel-deploy-cpu
             dockerfile: Dockerfile.deploy.cpu
             context: .
-            suffix: cpu
           - name: deploy-gpu
-            image: xclabel-deploy
+            image: xclabel-deploy-gpu
             dockerfile: Dockerfile.deploy.gpu
             context: .
-            suffix: gpu
 
     steps:
       - name: Checkout repository
@@ -77,17 +73,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-          tags: |
-            type=sha
-            type=raw,value=latest,enable=${{ matrix.suffix == '' }}
-            type=raw,value=${{ matrix.suffix }}-latest,enable=${{ matrix.suffix != '' }}
-            type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.version != '' && matrix.suffix == '' }}
-            type=raw,value=${{ matrix.suffix }}-${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.version != '' && matrix.suffix != '' }}
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Generate tags
+        id: meta
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+
+          # ghcr.io 标签
+          TAGS="ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest"
+          # Docker Hub 标签
+          TAGS="$TAGS,liuli01/${{ matrix.image }}:latest"
+
+          if [ -n "$VERSION" ]; then
+            TAGS="$TAGS,ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:$VERSION"
+            TAGS="$TAGS,liuli01/${{ matrix.image }}:$VERSION"
+          fi
+
+          # 始终附带 sha 标签
+          TAGS="$TAGS,ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:sha-${{ github.sha }}"
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "Generated tags:"
+          echo "${TAGS}" | tr ',' '\n'
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -96,4 +108,3 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
