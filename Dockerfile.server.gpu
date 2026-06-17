@@ -36,9 +36,9 @@ ARG APT_MIRROR
 RUN if [ -n "$APT_MIRROR" ]; then \
         sed -i "s|archive.ubuntu.com|$APT_MIRROR|g" /etc/apt/sources.list 2>/dev/null; \
     fi && \
-    apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends \
+    DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         software-properties-common \
         libgl1 \
         libglib2.0-0 \
@@ -48,7 +48,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
         libgomp1 \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update \
-    && apt-get install -y --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         python3.12 \
         python3.12-venv \
     && rm -rf /var/lib/apt/lists/* \
@@ -60,8 +60,8 @@ WORKDIR /app
 
 COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 
-# 修复 venv Python 链接指向 runtime 的 Python
-RUN ln -sf /usr/bin/python3 /app/.venv/bin/python
+# 注意：venv 的 Python 来自 builder 阶段（python:3.12-slim-bookworm），
+# 它包含了所有依赖包，直接使用即可，不要重链接到 runtime 的系统 Python
 
 COPY --chown=appuser:appgroup app.py .
 COPY --chown=appuser:appgroup AiUtils.py .
