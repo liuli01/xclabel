@@ -5,7 +5,7 @@ let classes = [];
 let isDrawing = false;
 let startPoint = null;
 let currentPoint = null;
-let currentTool = 'rect'; // 默认工具
+let currentTool = 'smart'; // 默认工具（智能分割）
 let imageCache = new Map(); // 图片缓存
 let selectedAnnotationId = null; // 当前选中的标注ID
 let isResizing = false; // 是否正在调整大小
@@ -188,6 +188,11 @@ function initializeApp() {
             .catch(() => {});
 
         setupEventListeners();
+
+        // 默认工具是智能分割，自动进入 SAM 模式
+        if (currentTool === 'smart') {
+            enterSamMode();
+        }
     }
 }
 
@@ -249,8 +254,8 @@ function applyProjectTools(taskType) {
         move: ['detect', 'segment', 'obb', 'pose', 'classify'],
         smart: ['detect', 'segment', 'obb', 'pose'],
     };
-    const toolIds = ['rectTool', 'polygonTool', 'obbTool', 'poseTool', 'classifyTool', 'moveTool', 'smartTool'];
-    const toolKeys = ['rect', 'polygon', 'obb', 'pose', 'classify', 'move', 'smart'];
+    const toolIds = ['smartTool', 'rectTool', 'polygonTool', 'obbTool', 'poseTool', 'classifyTool', 'moveTool'];
+    const toolKeys = ['smart', 'rect', 'polygon', 'obb', 'pose', 'classify', 'move'];
     let firstVisibleTool = null;
 
     toolIds.forEach((id, idx) => {
@@ -763,20 +768,68 @@ function checkAnnotationClick(canvasX, canvasY, ratio, imgX, imgY) {
         if (annotation.type === 'pose' && annotation.bbox) {
             points = annotation.bbox;
         }
-        if (!points || points.length < 4) continue;
+        if (!points || points.length < 2) continue;
 
-        // 计算矩形的边界
-        const x1 = points[0][0] * ratio + imgX;
-        const y1 = points[0][1] * ratio + imgY;
-        const x2 = points[2][0] * ratio + imgX;
-        const y2 = points[2][1] * ratio + imgY;
+        const hitRadius = 8; // 点击容差（像素）
 
-        // 检查鼠标是否在矩形内部
-        if (canvasX >= x1 && canvasX <= x2 && canvasY >= y1 && canvasY <= y2) {
-            return annotation;
+        // 多边形/矩形：检测是否点击在边界上
+        if (annotation.type === 'polygon' || annotation.type === 'rectangle' || annotation.type === 'obb') {
+            // 转换坐标到画布空间
+            const pts = points.map(p => ({
+                x: p[0] * ratio + imgX,
+                y: p[1] * ratio + imgY
+            }));
+
+            // 检测点是否在多边形边上
+            for (let i = 0; i < pts.length; i++) {
+                const j = (i + 1) % pts.length;
+                const dist = pointToSegmentDistance(canvasX, canvasY, pts[i].x, pts[i].y, pts[j].x, pts[j].y);
+                if (dist < hitRadius) {
+                    return annotation;
+                }
+            }
+
+            // 也检测是否在内部（方便点击选中）
+            if (isPointInPolygon(canvasX, canvasY, pts)) {
+                return annotation;
+            }
+        } else {
+            // 矩形检测（姿态等）：点击在矩形内部即选中
+            const x1 = points[0][0] * ratio + imgX;
+            const y1 = points[0][1] * ratio + imgY;
+            const x2 = points[2][0] * ratio + imgX;
+            const y2 = points[2][1] * ratio + imgY;
+            if (canvasX >= x1 && canvasX <= x2 && canvasY >= y1 && canvasY <= y2) {
+                return annotation;
+            }
         }
     }
     return null;
+}
+
+// 点到线段的距离
+function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+// 射线法判断点是否在多边形内部
+function isPointInPolygon(px, py, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x, yi = polygon[i].y;
+        const xj = polygon[j].x, yj = polygon[j].y;
+        if ((yi > py) !== (yj > py) &&
+            px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+            inside = !inside;
+        }
+    }
+    return inside;
 }
 
 // 处理鼠标移动事件
@@ -1412,16 +1465,29 @@ function confirmSamMask() {
     const selectedClass = document.querySelector('.class-item.selected');
     const className = selectedClass ? selectedClass.querySelector('.class-name').textContent : '未分类';
 
-    // 创建标注
-    const annotation = {
-        id: Date.now(),
-        class: className,
-        type: 'polygon',
-        points: bestPolygon,
-        source: 'sam2',
-    };
+    // 判断是创建新标注还是更新已有标注
+    if (selectedAnnotationId !== null) {
+        // 更新已有标注（SAM 精化修正）
+        const existing = currentAnnotations.find(a => a.id === selectedAnnotationId);
+        if (existing) {
+            existing.points = bestPolygon;
+            existing.type = 'polygon';
+            existing.source = existing.source || 'sam2_refined';
+            showToast('已更新标注轮廓');
+        }
+        selectedAnnotationId = null; // 取消选中
+    } else {
+        // 创建新标注
+        const annotation = {
+            id: Date.now(),
+            class: className,
+            type: 'polygon',
+            points: bestPolygon,
+            source: 'sam2',
+        };
+        currentAnnotations.push(annotation);
+    }
 
-    currentAnnotations.push(annotation);
     samMaskPolygons = null;
     samPrompts = [];
     saveAnnotations();
@@ -1511,8 +1577,37 @@ function drawControlPoints(ctx, startPoint, currentPoint) {
 // 绘制所有标注
 function drawAnnotations(ctx, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0) {
     currentAnnotations.forEach(annotation => {
+        // SAM 模式下且有新 Mask 时，跳过选中的标注（由 SAM 实时预览替代）
+        if (samMode && samMaskPolygons && annotation.id === selectedAnnotationId) {
+            return;
+        }
         drawAnnotation(ctx, annotation, scaleX, scaleY, offsetX, offsetY);
     });
+
+    // SAM 模式下，用新 Mask 替代选中标注的显示
+    if (samMode && samMaskPolygons && selectedAnnotationId !== null) {
+        const selected = currentAnnotations.find(a => a.id === selectedAnnotationId);
+        if (selected) {
+            const classInfo = classes.find(c => c.name === selected.class);
+            const color = classInfo ? classInfo.color : '#ff0000';
+            const bestPoly = samMaskPolygons[0];
+            if (bestPoly && bestPoly.length >= 3) {
+                ctx.save();
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([6, 3]);
+                ctx.beginPath();
+                ctx.moveTo(bestPoly[0][0] * scaleX + offsetX, bestPoly[0][1] * scaleY + offsetY);
+                for (let i = 1; i < bestPoly.length; i++) {
+                    ctx.lineTo(bestPoly[i][0] * scaleX + offsetX, bestPoly[i][1] * scaleY + offsetY);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+        }
+    }
 }
 
 // 绘制单个标注

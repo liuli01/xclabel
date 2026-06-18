@@ -94,7 +94,11 @@
                     <canvas id="imageCanvas"></canvas>
                     <!-- 标注工具 -->
                     <div class="drawing-tools">
-                        <button id="rectTool" class="tool-btn active" title="矩形工具">
+                        <button id="smartTool" class="tool-btn active" title="智能标注 (SAM)">
+                            <i class="fas fa-wand-magic-sparkles"></i>
+                        </button>
+                        <div class="tool-separator"></div>
+                        <button id="rectTool" class="tool-btn" title="矩形工具">
                             <i class="fas fa-vector-square"></i>
                         </button>
                         <button id="polygonTool" class="tool-btn" title="多边形工具">
@@ -111,9 +115,6 @@
                         </button>
                         <button id="moveTool" class="tool-btn" title="移动工具">
                             <i class="fas fa-arrows-alt"></i>
-                        </button>
-                        <button id="smartTool" class="tool-btn" title="智能标注 (SAM) — 需安装 SAM 2 依赖">
-                            <i class="fas fa-wand-magic-sparkles"></i> 智能
                         </button>
                         <div class="tool-separator"></div>
                         <button id="rotateLeftBtn" class="tool-btn" title="向左旋转90°">
