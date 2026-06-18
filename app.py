@@ -4767,6 +4767,49 @@ if "{task}" == "classify":
             "confidence": round(float(probs.top1conf), 4),
             "class_id": top_idx
         }})
+elif "{task}" == "segment":
+    # 分割推理：以 masks 为主输出，bbox 作为辅助信息
+    masks = result.masks if hasattr(result, 'masks') else None
+    boxes = result.boxes
+    if masks is not None:
+        for i in range(len(masks)):
+            seg = masks.xy[i].cpu().numpy().tolist() if hasattr(masks.xy, 'cpu') else masks.xy[i].tolist()
+            # 分割多边形顶点坐标（绝对像素）
+            points = [{{"x": round(float(p[0]), 2), "y": round(float(p[1]), 2)}} for p in seg]
+            pred = {{
+                "points": points,
+                "detection_id": str(os.urandom(16).hex())
+            }}
+            # 从对应的 bbox 中获取置信度、类别等信息
+            if boxes is not None and i < len(boxes):
+                pred["confidence"] = round(float(boxes.conf[i]), 4)
+                pred["class"] = result.names.get(int(boxes.cls[i]), str(int(boxes.cls[i])))
+                pred["class_id"] = int(boxes.cls[i])
+                bbox = boxes.xywhn[i].cpu().numpy().tolist() if hasattr(boxes.xywhn, 'cpu') else boxes.xywhn[i].tolist()
+                pred["x"] = round(float(bbox[0] * img_w), 2)
+                pred["y"] = round(float(bbox[1] * img_h), 2)
+                pred["width"] = round(float(bbox[2] * img_w), 2)
+                pred["height"] = round(float(bbox[3] * img_h), 2)
+            else:
+                pred["confidence"] = 0.0
+                pred["class"] = ""
+                pred["class_id"] = 0
+            predictions.append(pred)
+    elif boxes is not None:
+        # 降级：masks 不存在但有 boxes，按检测输出
+        for i in range(len(boxes)):
+            bbox = boxes.xywhn[i].cpu().numpy().tolist() if hasattr(boxes.xywhn, 'cpu') else boxes.xywhn[i].tolist()
+            cx, cy, w, h = bbox[0] * img_w, bbox[1] * img_h, bbox[2] * img_w, bbox[3] * img_h
+            predictions.append({{
+                "x": round(float(cx), 2),
+                "y": round(float(cy), 2),
+                "width": round(float(w), 2),
+                "height": round(float(h), 2),
+                "confidence": round(float(boxes.conf[i]), 4),
+                "class": result.names.get(int(boxes.cls[i]), str(int(boxes.cls[i]))),
+                "class_id": int(boxes.cls[i]),
+                "detection_id": str(os.urandom(16).hex())
+            }})
 else:
     boxes = result.boxes
     masks = result.masks if hasattr(result, 'masks') else None
@@ -4799,7 +4842,7 @@ else:
             }}
             if masks is not None and i < len(masks):
                 seg = masks.xy[i].cpu().numpy().tolist() if hasattr(masks.xy, 'cpu') else masks.xy[i].tolist()
-                pred["points"] = [{{"x": round(float(p[0]) / img_w, 4), "y": round(float(p[1]) / img_h, 4)}} for p in seg]
+                pred["points"] = [{{"x": round(float(p[0]), 2), "y": round(float(p[1]), 2)}} for p in seg]
             if keypoints is not None and i < len(keypoints):
                 kpts = keypoints.data[i].cpu().numpy().tolist() if hasattr(keypoints.data, 'cpu') else keypoints.data[i].tolist()
                 kp_names = result.names if hasattr(result, 'names') else {{}}
@@ -4920,6 +4963,7 @@ def sam_reset():
             engine.reset()
         return jsonify({'success': True})
     except Exception as e:
+        logging.error(f"SAM reset error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 

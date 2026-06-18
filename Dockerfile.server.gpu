@@ -100,7 +100,7 @@ RUN mkdir -p uploads static/annotations models \
     && chown -R appuser:appgroup /app uploads plugins static/annotations models
 
 # 下载 SAM 2 模型权重
-RUN python3 -c "
+RUN python3 <<'PYEOF'
 import os, urllib.request
 models_dir = '/app/models'
 files = {
@@ -113,7 +113,8 @@ for name, url in files.items():
         print(f'Downloading {name}...')
         urllib.request.urlretrieve(url, path)
         print(f'Downloaded {name}')
-" && chown -R appuser:appgroup /app/models
+PYEOF
+RUN chown -R appuser:appgroup /app/models
 
 ENV PATH="/app/.venv/bin:$PATH" \
     HOME=/app \

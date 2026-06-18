@@ -240,7 +240,7 @@ class SAM2Engine:
         """清除当前图片和 embedding 缓存。"""
         self._current_image_path = None
         if self._predictor is not None:
-            self._predictor.reset_image()
+            self._predictor.reset_predictor()
         logger.debug("SAM2Engine 缓存已清除")
 
     def predict(

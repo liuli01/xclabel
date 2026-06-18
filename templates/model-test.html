@@ -332,14 +332,14 @@
                         ctx.closePath();
                         ctx.stroke();
                     } else if (taskType === 'segment' && p.points) {
-                        ctx.globalAlpha = 0.4;
+                        ctx.globalAlpha = 0.3;
                         ctx.beginPath();
-                        ctx.moveTo(p.points[0].x * canvas.width, p.points[0].y * canvas.height);
-                        for (let j = 1; j < p.points.length; j++) ctx.lineTo(p.points[j].x * canvas.width, p.points[j].y * canvas.height);
+                        ctx.moveTo(p.points[0].x, p.points[0].y);
+                        for (let j = 1; j < p.points.length; j++) ctx.lineTo(p.points[j].x, p.points[j].y);
                         ctx.closePath();
                         ctx.fill();
                         ctx.globalAlpha = 1.0;
-                        if (p.x !== undefined) { const x1 = p.x - p.width / 2, y1 = p.y - p.height / 2; ctx.strokeRect(x1, y1, p.width, p.height); }
+                        ctx.stroke();
                     } else if (p.x !== undefined && p.width !== undefined) {
                         const x1 = p.x - p.width / 2, y1 = p.y - p.height / 2;
                         ctx.strokeRect(x1, y1, p.width, p.height);

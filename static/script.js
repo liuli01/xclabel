@@ -173,26 +173,36 @@ function initializeApp() {
         loadImages();
         loadShortcutSettings();
 
+        const smartBtn = document.getElementById('smartTool');
+
         // 检查 SAM 模型状态，更新按钮提示
         fetch('/api/sam/status')
             .then(r => r.json())
             .then(status => {
-                const smartBtn = document.getElementById('smartTool');
                 if (smartBtn) {
                     smartBtn.title = status.loaded
                         ? '智能标注 (SAM)'
                         : '智能标注 (SAM) — 模型未加载，请安装 sam2 依赖';
                     smartBtn.dataset.samLoaded = status.loaded ? 'true' : 'false';
                 }
+                // 默认工具是智能分割，等状态确认后再决定是否进入 SAM 模式
+                if (currentTool === 'smart') {
+                    if (status.loaded) {
+                        enterSamMode();
+                    } else {
+                        showToast('SAM 2 模型未加载，请先执行: pip install sam2');
+                        switchTool('rect');
+                    }
+                }
             })
-            .catch(() => {});
+            .catch(() => {
+                // 网络异常时，仍尝试进入 SAM 模式（由 enterSamMode 内的 dataset 检查兜底）
+                if (currentTool === 'smart') {
+                    enterSamMode();
+                }
+            });
 
         setupEventListeners();
-
-        // 默认工具是智能分割，自动进入 SAM 模式
-        if (currentTool === 'smart') {
-            enterSamMode();
-        }
     }
 }
 

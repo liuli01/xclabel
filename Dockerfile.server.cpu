@@ -104,15 +104,15 @@ COPY --from=builder --chown=appuser:appgroup /app/plugins/ ./plugins/
 RUN mkdir -p uploads static/annotations models \
     && chown -R appuser:appgroup /app uploads plugins static/annotations models
 
-RUN python3 -c "
+RUN python3 <<'PYEOF'
 import os, urllib.request
 models_dir = '/app/models'
-# 仅下载配置文件
 url = 'https://raw.githubusercontent.com/facebookresearch/sam2/main/sam2/configs/sam2/sam2_hiera_t.yaml'
 path = os.path.join(models_dir, 'sam2_hiera_t.yaml')
 if not os.path.exists(path):
     urllib.request.urlretrieve(url, path)
-" && chown -R appuser:appgroup /app/models
+PYEOF
+RUN chown -R appuser:appgroup /app/models
 
 # 设置环境变量
 ENV PATH="/app/.venv/bin:$PATH" \
