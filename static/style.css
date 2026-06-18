@@ -5396,4 +5396,27 @@ body {
     transform: translateY(-2px);
 }
 
+/* 智能标注按钮 */
+#smartTool {
+    position: relative;
+}
+#smartTool.active {
+    background-color: #4a9eff;
+    color: #fff;
+    border-color: #3a8eef;
+}
+#smartTool .sam-indicator {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #4caf50;
+    display: none;
+}
+#smartTool .sam-indicator.loaded {
+    display: block;
+}
+
 

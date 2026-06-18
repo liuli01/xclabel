@@ -96,8 +96,24 @@ COPY --chown=appuser:appgroup plugins/ ./plugins/
 #     && plugins/yolo26/venv/bin/python -c "from ultralytics import YOLO; YOLO('yolo26n.pt')" 2>/dev/null \
 #     && cp /root/.ultralytics/models/yolo26n.pt plugins/yolo26/models/ 2>/dev/null || echo "yolo26n.pt will use local file if present"
 
-RUN mkdir -p uploads static/annotations \
-    && chown -R appuser:appgroup /app uploads plugins static/annotations
+RUN mkdir -p uploads static/annotations models \
+    && chown -R appuser:appgroup /app uploads plugins static/annotations models
+
+# 下载 SAM 2 模型权重
+RUN python3 -c "
+import os, urllib.request
+models_dir = '/app/models'
+files = {
+    'sam2_hiera_t.yaml': 'https://raw.githubusercontent.com/facebookresearch/sam2/main/sam2/configs/sam2/sam2_hiera_t.yaml',
+    'sam2_hiera_tiny.pt': 'https://dl.fbaipublicfiles.com/sam2/sam2_hiera_tiny.pt',
+}
+for name, url in files.items():
+    path = os.path.join(models_dir, name)
+    if not os.path.exists(path):
+        print(f'Downloading {name}...')
+        urllib.request.urlretrieve(url, path)
+        print(f'Downloaded {name}')
+" && chown -R appuser:appgroup /app/models
 
 ENV PATH="/app/.venv/bin:$PATH" \
     HOME=/app \

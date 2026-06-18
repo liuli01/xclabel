@@ -67,7 +67,8 @@
                     </div>
                     <div class="image-toolbar">
                         <div class="image-stats">
-                            <span id="imageCount">共 0 张图片</span>
+                            <span id="imageCount">0/0</span>
+                            <span style="color: #999; font-size: 0.85em;">共 <span id="imageTotal">0</span> 张</span>
                         </div>
                         <div class="image-actions">
                             <button id="selectAllBtn" class="btn btn-small btn-secondary" title="全选">
@@ -82,6 +83,9 @@
                 <ul id="imageList" class="image-list">
                     <!-- 图片将通过JavaScript动态加载 -->
                 </ul>
+                <div id="imageLoadingIndicator" style="display: none; text-align: center; padding: 30px; color: #888;">
+                    <i class="fas fa-spinner fa-spin"></i> 图片加载中...
+                </div>
             </div>
 
             <!-- 中间图像显示区域 -->
@@ -107,6 +111,9 @@
                         </button>
                         <button id="moveTool" class="tool-btn" title="移动工具">
                             <i class="fas fa-arrows-alt"></i>
+                        </button>
+                        <button id="smartTool" class="tool-btn" title="智能标注 (SAM) — 需安装 SAM 2 依赖">
+                            <i class="fas fa-wand-magic-sparkles"></i> 智能
                         </button>
                         <div class="tool-separator"></div>
                         <button id="rotateLeftBtn" class="tool-btn" title="向左旋转90°">
@@ -431,6 +438,67 @@
                     </div>
                 </div>
                 
+                <!-- 标注模式切换 -->
+                <div class="form-group" style="margin-bottom: 15px; padding: 0 20px;">
+                    <label style="font-weight: 500; color: #555;">标注模式:</label>
+                    <div id="aiModeSelector" style="display: flex; gap: 20px; margin-top: 8px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa;">
+                            <input type="radio" name="aiMode" value="vlm" checked>
+                            <span>VLM API 标注</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa;">
+                            <input type="radio" name="aiMode" value="yolo">
+                            <span>YOLO 自动检测</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa;">
+                            <input type="radio" name="aiMode" value="vlm_sam">
+                            <span>智能分割</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- YOLO 配置（默认隐藏） -->
+                <div id="yoloConfigSection" style="display: none; margin: 0 20px 15px 20px; padding: 15px; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px;">
+                    <h4 style="margin: 0 0 12px 0; font-size: 0.95em; color: #555;">
+                        <i class="fas fa-robot"></i> YOLO 配置
+                    </h4>
+                    <div style="display: flex; gap: 12px; margin-bottom: 10px;">
+                        <div style="flex: 1;">
+                            <label for="yoloVersionSelectAuto" style="display: block; margin-bottom: 4px; font-size: 0.85em; color: #666;">YOLO 版本:</label>
+                            <select id="yoloVersionSelectAuto" style="width: 100%; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em;">
+                                <option value="yolo8">YOLOv8</option>
+                                <option value="yolo11" selected>YOLO11</option>
+                                <option value="yolo26">YOLO26</option>
+                            </select>
+                        </div>
+                        <div style="flex: 2;">
+                            <label for="yoloConfidence" style="display: block; margin-bottom: 4px; font-size: 0.85em; color: #666;">置信度阈值:</label>
+                            <input type="number" id="yoloConfidence" style="width: 100%; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em;" min="0.01" max="1" step="0.05" value="0.25">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <label for="yoloModelPath" style="display: block; margin-bottom: 4px; font-size: 0.85em; color: #666;">模型文件路径:</label>
+                        <input type="text" id="yoloModelPath" style="width: 100%; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em;" placeholder="plugins/yolo11/runs/detect/train/weights/best.pt">
+                        <small style="color: #999; font-size: 0.8em;">使用训练好的模型权重文件路径</small>
+                    </div>
+                </div>
+
+                <!-- 智能分割进度 -->
+                <div id="vlmSamProgress" class="progress-section" style="display: none; margin: 0 20px 15px 20px; padding: 15px; background: #f0f8ff; border: 1px solid #4a9eff; border-radius: 6px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 0.95em; color: #333;">
+                        <i class="fas fa-magic"></i> 智能分割进度
+                    </h4>
+                    <div style="margin-bottom: 8px; font-size: 0.9em; color: #555;">
+                        <span id="vlmSamProgressText">准备中...</span>
+                    </div>
+                    <div style="width: 100%; height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
+                        <div id="vlmSamProgressBar" style="width: 0%; height: 100%; background-color: #4a9eff; border-radius: 4px; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="margin-top: 6px; font-size: 0.8em; color: #888; text-align: right;">
+                        <span id="vlmSamProgressCount">0/0</span>
+                    </div>
+                </div>
+
                 <!-- 提示词输入区域 -->
                 <div class="prompt-section">
                     <h3>提示词</h3>
@@ -449,22 +517,14 @@
                 <div id="progressSection" class="progress-section" style="display: none;">
                     <h3>标注进度</h3>
                     <div class="progress-content">
-                        <div class="progress-info">
-                            <div class="progress-item">
-                                <label>已执行：</label>
-                                <span id="progressExecuted">0</span> / <span id="progressTotal">0</span>
-                            </div>
-                            <div class="progress-item">
-                                <label>总耗时：</label>
-                                <span id="progressTime">0秒</span>
-                            </div>
-                            <div class="progress-item">
-                                <label>状态：</label>
-                                <span id="progressStatus">准备中</span>
-                            </div>
+                        <div style="margin-bottom: 6px; font-size: 0.9em; color: #555;">
+                            <span id="progressStatus">准备中...</span>
                         </div>
                         <div class="progress-bar-container">
                             <div id="progressBar" class="progress-bar"></div>
+                        </div>
+                        <div style="margin-top: 4px; font-size: 0.8em; color: #888; text-align: right;">
+                            <span id="progressCount">0/0</span>
                         </div>
                         <div class="progress-details">
                             <div id="progressDetails"></div>
@@ -557,7 +617,24 @@
             const apiModel = document.getElementById('apiModel');
             const apiUrl = document.getElementById('apiUrl');
             const apiTimeout = document.getElementById('apiTimeout');
-            
+
+            // 标注模式切换
+            document.querySelectorAll('input[name="aiMode"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const mode = this.value;
+                    const isYolo = mode === 'yolo';
+                    const isVlm = mode === 'vlm' || mode === 'vlm_sam';
+                    document.getElementById('yoloConfigSection').style.display = isYolo ? 'block' : 'none';
+                    // 切换 VLM 相关区域显示
+                    const apiConfigSection = document.querySelector('.api-config-section');
+                    const promptSection = document.querySelector('.prompt-section');
+                    const labelSection = document.querySelector('.label-selection-section');
+                    if (apiConfigSection) apiConfigSection.style.display = isVlm ? 'block' : 'none';
+                    if (promptSection) promptSection.style.display = isVlm ? 'block' : 'none';
+                    if (labelSection) labelSection.style.display = isVlm ? 'block' : 'none';
+                });
+            });
+
             // 提示词输入框
             const aiPrompt = document.getElementById('aiPrompt');
             
@@ -649,17 +726,28 @@
                 }
             });
             
-            // 开始执行AI标注
+            // 开始执行AI标注（根据模式分发）
             startBtn.addEventListener('click', function() {
+                const mode = document.querySelector('input[name="aiMode"]:checked').value;
+                if (mode === 'yolo') {
+                    startYoloAutoLabel();
+                } else if (mode === 'vlm_sam') {
+                    startVlmSamLabel();
+                } else {
+                    startVlmAiLabel();
+                }
+            });
+
+            function startVlmAiLabel() {
                 if (!selectedLabel) {
                     alert('请选择一个标签');
                     return;
                 }
-                
+
                 // 获取选中的图片（使用复选框选中的图片）
                 const selectedCheckboxes = document.querySelectorAll('.image-checkbox-input:checked');
                 let imageNames = [];
-                
+
                 if (selectedCheckboxes.length > 0) {
                     // 如果有通过复选框选中的图片，使用这些图片
                     imageNames = Array.from(selectedCheckboxes).map(checkbox => {
@@ -673,12 +761,12 @@
                         imageNames = [singleSelectedImage.querySelector('.image-name').textContent];
                     }
                 }
-                
+
                 if (imageNames.length === 0) {
                     alert('请至少选中一个文件');
                     return;
                 }
-                
+
                 // 获取API配置
                 const config = {
                     inferenceTool: apiTool.value,
@@ -688,26 +776,36 @@
                     timeout: parseInt(apiTimeout.value),
                     prompt: aiPrompt.value
                 };
-                
-                // 显示进度区域
-                const progressSection = document.getElementById('progressSection');
+
+                // 显示进度区域（复用智能分割的进度UI）
+                const progressSection = document.getElementById('vlmSamProgress');
+                const progressBar = document.getElementById('vlmSamProgressBar');
+                const progressText = document.getElementById('vlmSamProgressText');
+                const progressCount = document.getElementById('vlmSamProgressCount');
+                const total = imageNames.length;
+
+                document.getElementById('aiModeSelector').style.display = 'none';
                 progressSection.style.display = 'block';
-                
-                // 初始化进度显示
-                document.getElementById('progressExecuted').textContent = '0';
-                document.getElementById('progressTotal').textContent = imageNames.length;
-                document.getElementById('progressTime').textContent = '0秒';
-                document.getElementById('progressStatus').textContent = '准备中';
-                document.getElementById('progressBar').style.width = '0%';
-                document.getElementById('progressDetails').textContent = '';
-                
+                progressBar.style.width = '0%';
+                progressText.textContent = `准备中，共 ${total} 张...`;
+                progressCount.textContent = '0/' + total;
+
+                // 监听 VLM 进度
+                const progressHandler = function(data) {
+                    const pct = Math.round(data.processed / data.total * 100);
+                    progressBar.style.width = pct + '%';
+                    progressCount.textContent = data.processed + '/' + data.total;
+                    progressText.textContent = `第 ${data.processed}/${data.total} 张 — ${data.message || '处理中'}`;
+                };
+                socket.on('ai_label_progress', progressHandler);
+
                 // 发送AI标注请求
                 startBtn.disabled = true;
                 startBtn.textContent = '执行中...';
-                
+
                 // 记录开始时间
                 const startTime = Date.now();
-                
+
                 // 发送AI标注请求
                 fetch('/api/ai-label', {
                     method: 'POST',
@@ -722,20 +820,15 @@
                 })
                 .then(response => response.json())
                 .then(result => {
+                    socket.off('ai_label_progress', progressHandler);
                     if (result.success) {
-                        // 计算总耗时
-                        const endTime = Date.now();
-                        const totalTime = Math.round((endTime - startTime) / 1000);
-                        
-                        // 更新最终进度
-                        document.getElementById('progressExecuted').textContent = result.processed;
-                        document.getElementById('progressTime').textContent = `${totalTime}秒`;
-                        document.getElementById('progressStatus').textContent = '标注完成';
-                        document.getElementById('progressBar').style.width = '100%';
-                        document.getElementById('progressDetails').textContent = `成功处理 ${result.processed} 张图片，其中 ${result.labeled} 张标注成功`;
-                        
+                        const totalTime = Math.round((Date.now() - startTime) / 1000);
+                        progressBar.style.width = '100%';
+                        progressText.textContent = `✅ 完成: ${result.processed} 张处理，${result.labeled} 张标注成功 (${totalTime}秒)`;
+                        progressCount.textContent = result.processed + '/' + (result.total || imageNames.length);
+
                         showToast('AI标注完成', 'success');
-                        
+
                         // 延迟关闭弹框，让用户看到最终结果
                         setTimeout(() => {
                             // 更新图片列表状态
@@ -743,21 +836,181 @@
                             closeModal();
                         }, 1000);
                     } else {
+                        socket.off('ai_label_progress', progressHandler);
+                        progressText.textContent = '❌ 失败: ' + (result.error || '未知错误');
                         showToast(`AI标注失败: ${result.error}`, 'error');
-                        document.getElementById('progressStatus').textContent = '标注失败';
                     }
                 })
                 .catch(error => {
-                    console.error('AI label failed:', error);
+                    socket.off('ai_label_progress', progressHandler);
+                    progressText.textContent = '❌ 失败: ' + (error.message || '请求失败');
                     showToast('AI标注失败', 'error');
-                    document.getElementById('progressStatus').textContent = '标注失败';
                 })
                 .finally(() => {
-                    startBtn.disabled = false;
+                    document.getElementById('aiModeSelector').style.display = 'flex';
+                startBtn.disabled = false;
                     startBtn.textContent = '开始执行';
                 });
-            });
-            
+            }
+
+            function startYoloAutoLabel() {
+                const selectedImages = getSelectedImages();
+                if (selectedImages.length === 0) {
+                    showToast('请先选择要标注的图片');
+                    return;
+                }
+
+                const yoloVersion = document.getElementById('yoloVersionSelectAuto').value;
+                const modelPath = document.getElementById('yoloModelPath').value.trim();
+                const confidence = parseFloat(document.getElementById('yoloConfidence').value);
+
+                if (!modelPath) {
+                    showToast('请输入 YOLO 模型文件路径');
+                    return;
+                }
+
+                startBtn.disabled = true;
+                startBtn.textContent = '检测中...';
+
+                const progressSection = document.getElementById('vlmSamProgress');
+                const progressBar = document.getElementById('vlmSamProgressBar');
+                const progressText = document.getElementById('vlmSamProgressText');
+                const progressCount = document.getElementById('vlmSamProgressCount');
+                const total = selectedImages.length;
+
+                progressSection.style.display = 'block';
+                progressBar.style.width = '0%';
+                progressText.textContent = `正在处理第 0/${total} 张...`;
+                progressCount.textContent = '0/' + total;
+
+                const progressHandler = function(data) {
+                    progressText.textContent = `第 ${data.current}/${data.total} 张 — 检测到 ${data.found} 个目标`;
+                    const pct = Math.round(data.current / data.total * 100);
+                    progressBar.style.width = pct + '%';
+                    progressCount.textContent = data.current + '/' + data.total;
+                };
+                socket.on('yolo_label_progress', progressHandler);
+
+                fetch('/api/auto-label/yolo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        images: selectedImages,
+                        yolo_version: yoloVersion,
+                        model_path: modelPath,
+                        confidence: confidence,
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    socket.off('yolo_label_progress', progressHandler);
+                    progressBar.style.width = '100%';
+                    if (data.success) {
+                        progressText.textContent = `✅ 完成: ${data.labeled}/${data.total} 张生成标注`;
+                        showToast(`YOLO 检测完成: ${data.labeled}/${data.total} 张图片`);
+                        if (currentImage && typeof loadAnnotations === 'function') {
+                            loadAnnotations(currentImage);
+                        }
+                        loadImages();
+                    } else {
+                        progressText.textContent = '❌ 失败: ' + (data.error || '未知错误');
+                        showToast('YOLO 检测失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(err => {
+                    socket.off('yolo_label_progress', progressHandler);
+                    progressText.textContent = '❌ 请求失败';
+                    showToast('YOLO 检测失败: ' + err.message);
+                })
+                .finally(() => {
+                    document.getElementById('aiModeSelector').style.display = 'flex';
+                startBtn.disabled = false;
+                    startBtn.textContent = '开始执行';
+                });
+            }
+
+            function getSelectedImages() {
+                const checks = document.querySelectorAll('.image-checkbox-input:checked');
+                const images = [];
+                checks.forEach(cb => {
+                    const li = cb.closest('.image-item');
+                    if (li && li.dataset.image) {
+                        images.push(li.dataset.image);
+                    }
+                });
+                return images;
+            }
+
+            function startVlmSamLabel() {
+                const selectedImages = getSelectedImages();
+                if (selectedImages.length === 0) {
+                    showToast('请先选择要标注的图片');
+                    return;
+                }
+
+                startBtn.disabled = true;
+                startBtn.textContent = '智能分割中...';
+
+                // 显示进度
+                const progressSection = document.getElementById('vlmSamProgress');
+                const progressBar = document.getElementById('vlmSamProgressBar');
+                const progressText = document.getElementById('vlmSamProgressText');
+                const progressCount = document.getElementById('vlmSamProgressCount');
+                const total = selectedImages.length;
+
+                progressSection.style.display = 'block';
+                progressBar.style.width = '0%';
+                progressText.textContent = `正在处理第 0/${total} 张...`;
+                progressCount.textContent = '0/' + total;
+
+                // 监听 SocketIO 进度
+                const progressHandler = function(data) {
+                    if (data.status === 'vlm') {
+                        progressText.textContent = `第 ${data.current}/${data.total} 张 — VLM 检测中`;
+                    } else if (data.status === 'done') {
+                        progressText.textContent = `第 ${data.current}/${data.total} 张 ✅ 完成 (检测到 ${data.found} 个目标)`;
+                    }
+                    const pct = Math.round(data.current / data.total * 100);
+                    progressBar.style.width = pct + '%';
+                    progressCount.textContent = data.current + '/' + data.total;
+                };
+                socket.on('vlm_sam_progress', progressHandler);
+
+                fetch('/api/auto-label/vlm-sam', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        images: selectedImages,
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    socket.off('vlm_sam_progress', progressHandler);
+                    progressBar.style.width = '100%';
+                    if (data.success) {
+                        progressText.textContent = `✅ 完成: ${data.labeled}/${data.total} 张生成标注`;
+                        showToast(`智能分割完成: ${data.labeled}/${data.total} 张图片`);
+                        if (currentImage && typeof loadAnnotations === 'function') {
+                            loadAnnotations(currentImage);
+                        }
+                        loadImages();
+                    } else {
+                        progressText.textContent = '❌ 失败: ' + (data.error || '未知错误');
+                        showToast('智能分割失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(err => {
+                    socket.off('vlm_sam_progress', progressHandler);
+                    progressText.textContent = '❌ 请求失败';
+                    showToast('智能分割失败: ' + err.message);
+                })
+                .finally(() => {
+                    document.getElementById('aiModeSelector').style.display = 'flex';
+                startBtn.disabled = false;
+                    startBtn.textContent = '开始执行';
+                });
+            }
+
             // 更新图片列表
             function updateImageList() {
                 // 触发图片列表更新

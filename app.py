@@ -21,6 +21,12 @@ from flask_socketio import SocketIO
 from PIL import Image
 
 from AiUtils import AIAutoLabeler
+from ai_manager import (
+    get_sam2_engine,
+    release_sam2_engine,
+    YOLOAutoLabeler,
+    init_sam2_engine,
+)
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -288,6 +294,16 @@ PROJECTS_FOLDER = os.path.join(BASE_PATH, 'projects')
 LEGACY_UPLOAD_FOLDER = os.path.join(BASE_PATH, 'uploads')
 
 app.config['STATIC_FOLDER'] = STATIC_FOLDER
+
+# ===== SAM 2 引擎初始化（应用启动时预加载）=====
+SAM_MODEL_TYPE = os.environ.get("SAM_MODEL_TYPE", "small")
+SAM_MODELS_DIR = os.path.join(BASE_PATH, "models")
+
+try:
+    init_sam2_engine(model_type=SAM_MODEL_TYPE, models_dir=SAM_MODELS_DIR)
+    logging.info(f"SAM 2 engine initialized (model={SAM_MODEL_TYPE})")
+except Exception as e:
+    logging.warning(f"SAM 2 engine initialization failed: {e}. Smart labeling will be unavailable.")
 
 # 工程相关辅助函数
 
@@ -1854,6 +1870,7 @@ def api_test():
         prompt = request.form.get('prompt', '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}')
         inference_tool = request.form.get('inferenceTool', 'LMStudio')
         model = request.form.get('model', 'qwen/qwen3-vl-8b')
+        use_sam = request.form.get('use_sam', 'false') == 'true'
 
         # 保存临时图片文件
         with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
@@ -1867,9 +1884,71 @@ def api_test():
             # 调用analyze_image方法测试API
             result = labeler.analyze_image(temp_file_path)
 
+            # SAM 2 精化（可选）
+            sam_refinements = []
+            detections = result.get("detections", [])
+            if use_sam and detections:
+                sam_engine = get_sam2_engine()
+                if sam_engine and sam_engine.is_loaded():
+                    for det in detections:
+                        bbox = det.get("bbox", [])
+                        if len(bbox) == 4:
+                            try:
+                                sam_result = sam_engine.predict(temp_file_path, [
+                                    {"type": "box", "x1": bbox[0], "y1": bbox[1],
+                                     "x2": bbox[2], "y2": bbox[3]}
+                                ])
+                                sam_refinements.append({
+                                    "label": det.get("label", "unknown"),
+                                    "bbox": bbox,
+                                    "mask_polygons": sam_result.get("mask_polygons", []),
+                                    "area": sam_result.get("area", 0),
+                                })
+                            except Exception as sam_err:
+                                sam_refinements.append({
+                                    "label": det.get("label", "unknown"),
+                                    "bbox": bbox,
+                                    "error": str(sam_err),
+                                })
+
+            # 渲染检测结果到图片上
+            rendered_data = None
+            sam_rendered_data = None
+            if detections and len(detections) > 0:
+                try:
+                    rendered_path = labeler.render_detections(temp_file_path, detections)
+                    import base64
+                    with open(rendered_path, "rb") as f:
+                        rendered_data = base64.b64encode(f.read()).decode("utf-8")
+                    if os.path.exists(rendered_path):
+                        os.remove(rendered_path)
+
+                    # 如果有 SAM 精化结果，单独渲染 Mask 多边形预览图
+                    if use_sam and sam_refinements:
+                        sam_img = cv2.imread(temp_file_path)
+                        for ref in sam_refinements:
+                            for poly in ref.get("mask_polygons", []):
+                                if len(poly) >= 3:
+                                    pts = np.array([poly], dtype=np.int32)
+                                    cv2.polylines(sam_img, pts, True, (0, 255, 0), 2)
+                                    overlay = sam_img.copy()
+                                    cv2.fillPoly(overlay, pts, (0, 255, 0, 80))
+                                    cv2.addWeighted(overlay, 0.2, sam_img, 0.8, 0, sam_img)
+                        sam_rendered_path = temp_file_path + "_sam.jpg"
+                        cv2.imwrite(sam_rendered_path, sam_img)
+                        with open(sam_rendered_path, "rb") as f:
+                            sam_rendered_data = base64.b64encode(f.read()).decode("utf-8")
+                        if os.path.exists(sam_rendered_path):
+                            os.remove(sam_rendered_path)
+                except Exception as render_err:
+                    logging.warning(f"渲染检测结果失败: {render_err}")
+
             return jsonify({
                 'success': True,
-                'result': result
+                'result': result,
+                'rendered_image': rendered_data,
+                'sam_rendered_image': sam_rendered_data,
+                'sam_refinements': sam_refinements if use_sam else None,
             })
         finally:
             # 确保临时文件被删除
@@ -3259,9 +3338,36 @@ def check_ultralytics_install(yolo_version):
     return {'is_installed': False, 'gpus': []}
 
 
-# 全局训练任务锁，防止训练与 AI 标注同时运行
+# GPU 任务锁（在多个 GPU 任务间互斥）
 gpu_task_lock = threading.Lock()
-current_gpu_task = None  # 'train' | 'ai_label' | None
+gpu_task_owner = None       # None | "train" | "sam" | "yolo_label"
+gpu_task_timestamp = 0.0    # 最后活动时间
+current_gpu_task = None     # 'train' | 'ai_label' | None (向后兼容)
+
+def acquire_gpu(owner: str, timeout: int = 300) -> bool:
+    """获取 GPU 锁。timeout 秒超时返回 False"""
+    global gpu_task_owner, gpu_task_timestamp
+    if not gpu_task_lock.acquire(timeout=timeout):
+        return False
+    gpu_task_owner = owner
+    gpu_task_timestamp = time.time()
+    return True
+
+def release_gpu(owner: str):
+    """释放 GPU 锁，需校验 owner"""
+    global gpu_task_owner
+    if gpu_task_owner != owner:
+        logging.warning(f"release_gpu: owner mismatch (expected={gpu_task_owner}, got={owner})")
+    gpu_task_owner = None
+    gpu_task_lock.release()
+
+def get_gpu_status() -> dict:
+    """查询 GPU 使用状态"""
+    return {
+        "busy": gpu_task_owner is not None,
+        "owner": gpu_task_owner,
+        "idle_seconds": time.time() - gpu_task_timestamp if gpu_task_owner else 0,
+    }
 
 class YOLOTrainingTask:
     """YOLO 训练任务封装。"""
@@ -4743,6 +4849,414 @@ print(json.dumps({{"predictions": predictions}}, ensure_ascii=False))
                 os.rmdir(os.path.dirname(image_path))
             except Exception:
                 pass
+
+
+# ========================== SAM 2 交互式分割 API ==========================
+
+
+@app.route('/api/sam/predict', methods=['POST'])
+def sam_predict():
+    """SAM 2 交互式分割推理"""
+    try:
+        data = request.get_json()
+        image_name = data.get('image')
+        prompts = data.get('prompts', [])
+
+        if not image_name:
+            return jsonify({'error': 'Missing image name'}), 400
+        if not prompts:
+            return jsonify({'error': 'Missing prompts'}), 400
+
+        # 获取图片路径
+        project_name = get_current_project()
+        image_path = os.path.join(get_upload_folder(), image_name)
+        if not os.path.exists(image_path):
+            return jsonify({'error': f'Image not found: {image_name}'}), 404
+
+        # 获取 GPU 锁
+        if not acquire_gpu("sam", timeout=10):
+            status = get_gpu_status()
+            return jsonify({
+                'error': f'GPU is busy with {status["owner"]} task. Please try later.'
+            }), 503
+
+        # 读取 AI 配置中的 mask_mode
+        mask_mode = "best"
+        try:
+            config_path = os.path.join(get_upload_folder(), 'config', 'ai_config.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    ai_cfg = json.load(f)
+                mask_mode = ai_cfg.get('samMaskMode', 'best')
+        except Exception:
+            pass
+
+        try:
+            engine = get_sam2_engine()
+            if not engine or not engine.is_loaded():
+                return jsonify({'error': 'SAM 2 engine not loaded'}), 503
+
+            result = engine.predict(image_path, prompts, mask_mode=mask_mode)
+            return jsonify({
+                'success': True,
+                'mask_polygons': result['mask_polygons'],
+                'scores': result['scores'],
+                'area': result['area'],
+            })
+        finally:
+            release_gpu("sam")
+
+    except Exception as e:
+        logging.error(f"SAM predict error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sam/reset', methods=['POST'])
+def sam_reset():
+    """清除 SAM 当前图片缓存"""
+    try:
+        engine = get_sam2_engine()
+        if engine:
+            engine.reset()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sam/status', methods=['GET'])
+def sam_status():
+    """SAM 模型状态"""
+    engine = get_sam2_engine()
+    gpu_available = False
+    try:
+        import torch
+        gpu_available = torch.cuda.is_available()
+    except ImportError:
+        pass
+    return jsonify({
+        'loaded': engine is not None and engine.is_loaded(),
+        'model': engine.model_type if engine else None,
+        'device': engine.device if engine else None,
+        'gpu_available': gpu_available,
+        'gpu': get_gpu_status(),
+    })
+
+
+@app.route('/api/sam/models', methods=['GET'])
+def sam_models():
+    """获取支持的 SAM 模型列表和当前模型"""
+    from ai_manager import SAM2Engine
+    engine = get_sam2_engine()
+    models = []
+    for key, cfg in SAM2Engine.MODEL_CONFIGS.items():
+        ckpt_path = os.path.join(os.environ.get("SAM_MODELS_DIR", os.path.join(BASE_PATH, "models")), cfg["checkpoint"])
+        models.append({
+            'id': key,
+            'name': f"SAM 2 Hiera {key.capitalize()}",
+            'checkpoint': cfg["checkpoint"],
+            'available': os.path.exists(ckpt_path),
+        })
+    return jsonify({
+        'models': models,
+        'current': engine.model_type if engine else None,
+    })
+
+
+@app.route('/api/sam/switch-model', methods=['POST'])
+def sam_switch_model():
+    """切换 SAM 模型类型"""
+    try:
+        data = request.get_json()
+        model_type = data.get('model_type', '')
+        if not model_type:
+            return jsonify({'error': 'Missing model_type'}), 400
+
+        from ai_manager import SAM2Engine, init_sam2_engine, release_sam2_engine
+        if model_type not in SAM2Engine.MODEL_CONFIGS:
+            return jsonify({'error': f'Unsupported model: {model_type}'}), 400
+
+        # 释放旧引擎，初始化新引擎
+        release_sam2_engine()
+        models_dir = os.environ.get("SAM_MODELS_DIR", os.path.join(BASE_PATH, "models"))
+        init_sam2_engine(model_type=model_type, models_dir=models_dir)
+
+        engine = get_sam2_engine()
+        return jsonify({
+            'success': True,
+            'model': engine.model_type if engine else None,
+            'loaded': engine.is_loaded() if engine else False,
+        })
+    except Exception as e:
+        logging.error(f"Switch SAM model error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+# ========================== YOLO 批量自动标注 API ==========================
+
+
+@app.route('/api/auto-label/yolo', methods=['POST'])
+def auto_label_yolo():
+    """YOLO 批量自动检测"""
+    import time as time_module
+    try:
+        data = request.get_json()
+        images = data.get('images', [])
+        yolo_version = data.get('yolo_version', 'yolo11')
+        model_path = data.get('model_path', '')
+        confidence = float(data.get('confidence', 0.25))
+
+        if not images:
+            return jsonify({'error': 'No images provided'}), 400
+        if not model_path or not os.path.exists(model_path):
+            return jsonify({'error': f'Model not found: {model_path}'}), 400
+
+        # 获取 GPU 锁
+        if not acquire_gpu("yolo_label", timeout=10):
+            status = get_gpu_status()
+            return jsonify({
+                'error': f'GPU is busy with {status["owner"]} task. Please try later.'
+            }), 503
+
+        try:
+            labeler = YOLOAutoLabeler(yolo_version=yolo_version)
+            project_name = get_current_project()
+            upload_folder = get_upload_folder()
+
+            total = len(images)
+            all_annotations = {}
+            labeled = 0
+
+            for idx, image_name in enumerate(images):
+                image_path = os.path.join(upload_folder, image_name)
+                if not os.path.exists(image_path):
+                    continue
+
+                dets = labeler.label_image(image_path, model_path, confidence)
+
+                # 转换为前端标注格式
+                annotations = []
+                for det in dets:
+                    bbox = det['bbox']  # [x1, y1, x2, y2]
+                    annotations.append({
+                        'id': int(time_module.time() * 1000) + len(annotations),
+                        'class': det['label'],
+                        'type': 'rectangle',
+                        'points': [
+                            [bbox[0], bbox[1]],
+                            [bbox[2], bbox[1]],
+                            [bbox[2], bbox[3]],
+                            [bbox[0], bbox[3]],
+                        ],
+                        'confidence': det['confidence'],
+                        'source': 'yolo_auto_label',
+                    })
+
+                if annotations:
+                    all_annotations[image_name] = annotations
+                    labeled += 1
+
+                # SocketIO 进度推送（socketio 已在 app.py 中定义）
+                from flask_socketio import emit
+                socketio.emit('yolo_label_progress', {
+                    'current': idx + 1,
+                    'total': total,
+                    'found': len(annotations),
+                    'image': image_name,
+                }, namespace='/')
+
+            # 保存标注到 annotations.json
+            if all_annotations:
+                annotations_path = os.path.join(
+                    BASE_PATH, 'projects', project_name, 'annotations', 'annotations.json'
+                )
+                existing = {}
+                if os.path.exists(annotations_path):
+                    with open(annotations_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+
+                for img_name, anns in all_annotations.items():
+                    if img_name in existing:
+                        existing[img_name].extend(anns)
+                    else:
+                        existing[img_name] = anns
+
+                with open(annotations_path, 'w', encoding='utf-8') as f:
+                    json.dump(existing, f, ensure_ascii=False, indent=2)
+
+            return jsonify({
+                'success': True,
+                'total': total,
+                'labeled': labeled,
+                'annotations': all_annotations,
+            })
+        finally:
+            release_gpu("yolo_label")
+
+    except Exception as e:
+        logging.error(f"YOLO auto-label error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auto-label/vlm-sam', methods=['POST'])
+def auto_label_vlm_sam():
+    """VLM 检测 → SAM 2 精细化分割的串联管道"""
+    import time as time_module
+    try:
+        data = request.get_json()
+        images = data.get('images', [])
+        prompt_override = data.get('prompt', '')
+        label_filter = data.get('label_filter')
+
+        if not images:
+            return jsonify({'error': 'No images provided'}), 400
+
+        # 加载 VLM AI 配置
+        project_name = get_current_project()
+        config_path = os.path.join(get_upload_folder(), 'config', 'ai_config.json')
+        if not os.path.exists(config_path):
+            return jsonify({'error': 'AI config not found. Please configure AI settings first.'}), 400
+
+        with open(config_path, 'r', encoding='utf-8') as f:
+            ai_config = json.load(f)
+
+        api_url = ai_config.get('apiUrl', 'http://127.0.0.1:1234/v1')
+        api_key = ai_config.get('apiKey', '')
+        timeout = int(ai_config.get('timeout', 30))
+        prompt = prompt_override or ai_config.get('prompt', '')
+        model = ai_config.get('model', 'qwen/qwen3-vl-8b')
+        inference_tool = ai_config.get('inferenceTool', 'LMStudio')
+
+        if not prompt:
+            return jsonify({'error': 'No prompt configured. Please set AI prompt in settings.'}), 400
+
+        # 获取 GPU 锁
+        if not acquire_gpu("vlm_sam", timeout=30):
+            status = get_gpu_status()
+            return jsonify({
+                'error': f'GPU is busy with {status["owner"]} task. Please try later.'
+            }), 503
+
+        try:
+            labeler = AIAutoLabeler(api_url, api_key, prompt, timeout, inference_tool, model)
+            upload_folder = get_upload_folder()
+            sam_engine = get_sam2_engine()
+
+            annotations_path = os.path.join(
+                BASE_PATH, 'projects', project_name, 'annotations', 'annotations.json'
+            )
+
+            total = len(images)
+            all_annotations = {}
+            labeled = 0
+
+            for idx, image_name in enumerate(images):
+                image_path = os.path.join(upload_folder, image_name)
+                if not os.path.exists(image_path):
+                    continue
+
+                # 阶段 1: VLM 检测
+                socketio.emit('vlm_sam_progress', {
+                    'current': idx + 1, 'total': total,
+                    'image': image_name, 'status': 'vlm', 'found': 0,
+                })
+
+                try:
+                    vlm_result = labeler.analyze_image(image_path)
+                except Exception as e:
+                    logging.error(f"VLM inference failed for {image_name}: {e}")
+                    vlm_result = {}
+
+                detections = vlm_result.get('detections', [])
+                if label_filter:
+                    detections = [d for d in detections if d.get('label') == label_filter]
+
+                # 阶段 2: SAM 2 精细化（对每个检测框）
+                annotations = []
+                for det in detections:
+                    bbox = det.get('bbox', [])
+                    if len(bbox) != 4:
+                        continue
+
+                    label = det.get('label', 'unknown')
+                    confidence = det.get('confidence', 0.0)
+
+                    # 尝试 SAM 2 精化
+                    sam_success = False
+                    if sam_engine and sam_engine.is_loaded():
+                        try:
+                            sam_result = sam_engine.predict(image_path, [
+                                {'type': 'box', 'x1': bbox[0], 'y1': bbox[1],
+                                 'x2': bbox[2], 'y2': bbox[3]}
+                            ], mask_mode=ai_config.get('samMaskMode', 'best'))
+                            polygons = sam_result.get('mask_polygons', [])
+                            if polygons and len(polygons) > 0 and len(polygons[0]) >= 3:
+                                annotations.append({
+                                    'id': int(time_module.time() * 1000) + len(annotations),
+                                    'class': label,
+                                    'type': 'polygon',
+                                    'points': polygons[0],
+                                    'confidence': confidence,
+                                    'source': 'vlm_sam',
+                                })
+                                sam_success = True
+                        except Exception as e:
+                            logging.warning(f"SAM refinement failed for {image_name}/{label}: {e}")
+
+                    # 降级：保存 VLM 矩形框
+                    if not sam_success:
+                        annotations.append({
+                            'id': int(time_module.time() * 1000) + len(annotations),
+                            'class': label,
+                            'type': 'rectangle',
+                            'points': [
+                                [bbox[0], bbox[1]],
+                                [bbox[2], bbox[1]],
+                                [bbox[2], bbox[3]],
+                                [bbox[0], bbox[3]],
+                            ],
+                            'confidence': confidence,
+                            'source': 'vlm_sam_fallback',
+                        })
+
+                if annotations:
+                    all_annotations[image_name] = annotations
+                    labeled += 1
+
+                # SocketIO 进度推送
+                socketio.emit('vlm_sam_progress', {
+                    'current': idx + 1, 'total': total,
+                    'image': image_name, 'status': 'done',
+                    'found': len(annotations),
+                })
+
+            # 批量保存标注
+            if all_annotations:
+                existing = {}
+                if os.path.exists(annotations_path):
+                    with open(annotations_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+
+                for img_name, anns in all_annotations.items():
+                    if img_name in existing:
+                        existing[img_name].extend(anns)
+                    else:
+                        existing[img_name] = anns
+
+                with open(annotations_path, 'w', encoding='utf-8') as f:
+                    json.dump(existing, f, ensure_ascii=False, indent=2)
+
+            return jsonify({
+                'success': True,
+                'total': total,
+                'labeled': labeled,
+                'annotations': all_annotations,
+            })
+        finally:
+            release_gpu("vlm_sam")
+
+    except Exception as e:
+        logging.error(f"VLM-SAM auto-label error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 
 # ========================== 主程序入口 ==========================

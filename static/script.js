@@ -30,6 +30,14 @@ const MIN_ZOOM = 0.1; // 最小缩放比例
 const MAX_ZOOM = 5.0; // 最大缩放比例
 const ZOOM_STEP = 0.2; // 缩放步长
 
+// SAM 智能标注状态
+let samMode = false;
+let samPrompts = [];
+let samMaskPolygons = null;
+let samBoxStart = null;
+let samIsBoxDragging = false;
+let samLoading = false;
+
 // 防抖函数
 function debounce(func, wait) {
     let timeout;
@@ -164,6 +172,21 @@ function initializeApp() {
         loadClasses();
         loadImages();
         loadShortcutSettings();
+
+        // 检查 SAM 模型状态，更新按钮提示
+        fetch('/api/sam/status')
+            .then(r => r.json())
+            .then(status => {
+                const smartBtn = document.getElementById('smartTool');
+                if (smartBtn) {
+                    smartBtn.title = status.loaded
+                        ? '智能标注 (SAM)'
+                        : '智能标注 (SAM) — 模型未加载，请安装 sam2 依赖';
+                    smartBtn.dataset.samLoaded = status.loaded ? 'true' : 'false';
+                }
+            })
+            .catch(() => {});
+
         setupEventListeners();
     }
 }
@@ -224,9 +247,10 @@ function applyProjectTools(taskType) {
         pose: ['pose'],
         classify: ['classify'],
         move: ['detect', 'segment', 'obb', 'pose', 'classify'],
+        smart: ['detect', 'segment', 'obb', 'pose'],
     };
-    const toolIds = ['rectTool', 'polygonTool', 'obbTool', 'poseTool', 'classifyTool', 'moveTool'];
-    const toolKeys = ['rect', 'polygon', 'obb', 'pose', 'classify', 'move'];
+    const toolIds = ['rectTool', 'polygonTool', 'obbTool', 'poseTool', 'classifyTool', 'moveTool', 'smartTool'];
+    const toolKeys = ['rect', 'polygon', 'obb', 'pose', 'classify', 'move', 'smart'];
     let firstVisibleTool = null;
 
     toolIds.forEach((id, idx) => {
@@ -296,6 +320,12 @@ function setupEventListeners() {
     if (classifyTool) classifyTool.addEventListener('click', () => switchTool('classify'));
     if (moveTool) moveTool.addEventListener('click', () => switchTool('move'));
 
+    // 智能标注工具
+    const smartTool = document.getElementById('smartTool');
+    if (smartTool) {
+        smartTool.addEventListener('click', () => switchTool('smart'));
+    }
+
     // 旋转按钮
     const rotateLeftBtn = document.getElementById('rotateLeftBtn');
     const rotateRightBtn = document.getElementById('rotateRightBtn');
@@ -343,7 +373,14 @@ function setupEventListeners() {
     canvas.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('mouseleave', handleMouseLeave);
     canvas.addEventListener('dblclick', handleDoubleClick);
-    
+
+    // 阻止 SAM 模式下的右键菜单
+    canvas.addEventListener('contextmenu', function(e) {
+        if (samMode) {
+            e.preventDefault();
+        }
+    });
+
     // 模态框关闭事件
     setupModalCloseEvents();
     
@@ -401,12 +438,17 @@ function setupEventListeners() {
 
 // 切换工具
 function switchTool(tool) {
+    // 退出 SAM 模式
+    if (currentTool === 'smart' && tool !== 'smart') {
+        exitSamMode();
+    }
+
     // 更新UI状态
     document.querySelectorAll('.tool-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     document.getElementById(tool + 'Tool').classList.add('active');
-    
+
     // 重置所有绘制状态
     isDrawing = false;
     isPolygonDrawing = false;
@@ -421,6 +463,12 @@ function switchTool(tool) {
     // 设置当前工具
     currentTool = tool;
 
+    // SAM 工具栏激活
+    const smartBtn = document.getElementById('smartTool');
+    if (smartBtn) {
+        smartBtn.classList.toggle('active', tool === 'smart');
+    }
+
     // 更新鼠标样式
     const canvas = document.getElementById('imageCanvas');
     if (tool === 'move') {
@@ -431,13 +479,112 @@ function switchTool(tool) {
         canvas.style.cursor = 'crosshair';
     }
 
+    // 进入 SAM 模式
+    if (tool === 'smart') {
+        enterSamMode();
+    }
+
     redrawCanvas();
+}
+
+// SAM 智能标注模式：进入
+function enterSamMode() {
+    // 检查 SAM 模型是否已加载
+    const smartBtn = document.getElementById('smartTool');
+    if (smartBtn && smartBtn.dataset.samLoaded !== 'true') {
+        showToast('SAM 2 模型未加载，请先执行: pip install sam2');
+        switchTool('rect');
+        return;
+    }
+    samMode = true;
+    samPrompts = [];
+    samMaskPolygons = null;
+    samBoxStart = null;
+    samIsBoxDragging = false;
+    document.getElementById('imageCanvas').style.cursor = 'crosshair';
+    showSamHelperText('点击图片添加分割点，右键添加负样本，Shift+拖拽画框，Enter 确认，ESC 取消');
+}
+
+// SAM 智能标注模式：退出
+function exitSamMode() {
+    samMode = false;
+    samPrompts = [];
+    samMaskPolygons = null;
+    samBoxStart = null;
+    samIsBoxDragging = false;
+    document.getElementById('imageCanvas').style.cursor = 'default';
+    hideSamHelperText();
+    fetch('/api/sam/reset', { method: 'POST' }).catch(() => {});
+    redrawCanvas();
+}
+
+// 显示 SAM 帮助提示
+function showSamHelperText(text) {
+    let el = document.getElementById('samHelperText');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'samHelperText';
+        el.style.cssText = `
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); color: #fff; padding: 8px 16px;
+            border-radius: 4px; font-size: 0.85em; z-index: 1000;
+            pointer-events: none; white-space: nowrap;
+        `;
+        document.getElementById('imageCanvasContainer').appendChild(el);
+    }
+    el.textContent = text;
+    el.style.display = 'block';
+}
+
+// 隐藏 SAM 帮助提示
+function hideSamHelperText() {
+    const el = document.getElementById('samHelperText');
+    if (el) el.style.display = 'none';
+}
+
+// SAM 模式鼠标按下处理
+function handleSamMouseDown(e) {
+    const rect = e.target.getBoundingClientRect();
+    const canvasX = e.clientX - rect.left;
+    const canvasY = e.clientY - rect.top;
+
+    if (!currentImage) return;
+
+    // 使用与现有工具相同的坐标换算：屏幕坐标 → 图片坐标
+    const img = imageCache.get(currentImage);
+    if (!img) return;
+    const container = document.getElementById('imageCanvasContainer');
+    const { displayRatio, imgX, imgY } = getImageTransform(container, img);
+    const x = (canvasX - imgX) / displayRatio;
+    const y = (canvasY - imgY) / displayRatio;
+
+    if (e.button === 0) {
+        // 左键
+        if (e.shiftKey) {
+            // Shift+左键 = 开始拖拽画框
+            samBoxStart = { x, y };
+            samIsBoxDragging = true;
+        } else {
+            // 普通左键 = 正样本点
+            samPrompts.push({ type: 'point', x, y, label: 1 });
+            triggerSamPredict();
+        }
+    } else if (e.button === 2) {
+        // 右键 = 负样本点
+        samPrompts.push({ type: 'point', x, y, label: 0 });
+        triggerSamPredict();
+    }
 }
 
 // 处理鼠标按下事件
 function handleMouseDown(e) {
+    if (samMode) {
+        handleSamMouseDown(e);
+        return;
+    }
+
     if (!currentImage) return;
-    
+
     const rect = e.target.getBoundingClientRect();
     const canvas = e.target;
     
@@ -634,6 +781,11 @@ function checkAnnotationClick(canvasX, canvasY, ratio, imgX, imgY) {
 
 // 处理鼠标移动事件
 function handleMouseMove(e) {
+    if (samMode && samIsBoxDragging && samBoxStart) {
+        redrawCanvas();
+        return;
+    }
+
     if (!currentImage) return;
     
     const rect = e.target.getBoundingClientRect();
@@ -810,6 +962,28 @@ function moveAnnotation(annotationId, dx, dy) {
 
 // 处理鼠标抬起事件
 function handleMouseUp(e) {
+    if (samMode && samIsBoxDragging && samBoxStart) {
+        const rect = e.target.getBoundingClientRect();
+        const x = (e.clientX - rect.left - panOffsetX) / zoomScale;
+        const y = (e.clientY - rect.top - panOffsetY) / zoomScale;
+
+        const box = {
+            type: 'box',
+            x1: Math.min(samBoxStart.x, x),
+            y1: Math.min(samBoxStart.y, y),
+            x2: Math.max(samBoxStart.x, x),
+            y2: Math.max(samBoxStart.y, y),
+        };
+        // 检查框是否太小（至少 10 像素）
+        if (Math.abs(box.x2 - box.x1) > 10 && Math.abs(box.y2 - box.y1) > 10) {
+            samPrompts.push(box);
+        }
+        samIsBoxDragging = false;
+        samBoxStart = null;
+        triggerSamPredict();
+        return;
+    }
+
     if (!currentImage) return;
     
     // 结束调整大小
@@ -1150,6 +1324,170 @@ function drawImageAndAnnotations(ctx, img, container) {
 
         ctx.restore();
     }
+
+    // 绘制 SAM Mask 覆盖层
+    if (samMode && samMaskPolygons) {
+        drawSamOverlay(ctx, displayRatio, imgX, imgY);
+    }
+
+    // 绘制 SAM Prompt 点
+    if (samMode && samPrompts.length > 0) {
+        drawSamPrompts(ctx, displayRatio, imgX, imgY);
+    }
+
+    // 绘制拖拽中的 SAM Box
+    if (samMode && samIsBoxDragging && samBoxStart) {
+        drawSamDraggingBox(ctx, displayRatio, imgX, imgY);
+    }
+}
+
+// SAM 推理请求（带防抖）
+let samPredictTimer = null;
+
+function triggerSamPredict() {
+    if (samPredictTimer) clearTimeout(samPredictTimer);
+    samPredictTimer = setTimeout(() => {
+        if (samPrompts.length === 0 || !currentImage) return;
+
+        samLoading = true;
+        fetch('/api/sam/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image: currentImage,
+                prompts: samPrompts,
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            samLoading = false;
+            if (data.success) {
+                samMaskPolygons = data.mask_polygons;
+            } else {
+                samMaskPolygons = null;
+                showToast('SAM 推理失败: ' + (data.error || '未知错误'));
+            }
+            redrawCanvas();
+        })
+        .catch(err => {
+            samLoading = false;
+            samMaskPolygons = null;
+            showToast('SAM 请求失败: ' + err.message);
+            redrawCanvas();
+        });
+    }, 300);
+}
+
+function confirmSamMask() {
+    if (!samMaskPolygons || samMaskPolygons.length === 0) {
+        showToast('没有可确认的 Mask，请先点击图片生成分割');
+        return;
+    }
+
+    // 取面积最大的多边形
+    let bestPolygon = samMaskPolygons[0];
+    let bestArea = 0;
+    samMaskPolygons.forEach(poly => {
+        if (poly.length >= 3) {
+            let area = 0;
+            for (let i = 0; i < poly.length; i++) {
+                const j = (i + 1) % poly.length;
+                area += poly[i][0] * poly[j][1];
+                area -= poly[j][0] * poly[i][1];
+            }
+            area = Math.abs(area) / 2;
+            if (area > bestArea) {
+                bestArea = area;
+                bestPolygon = poly;
+            }
+        }
+    });
+
+    if (bestPolygon.length < 3) {
+        showToast('生成的多边形无效');
+        return;
+    }
+
+    // 获取当前选中的类别
+    const selectedClass = document.querySelector('.class-item.selected');
+    const className = selectedClass ? selectedClass.querySelector('.class-name').textContent : '未分类';
+
+    // 创建标注
+    const annotation = {
+        id: Date.now(),
+        class: className,
+        type: 'polygon',
+        points: bestPolygon,
+        source: 'sam2',
+    };
+
+    currentAnnotations.push(annotation);
+    samMaskPolygons = null;
+    samPrompts = [];
+    saveAnnotations();
+    updateAnnotationList();
+    redrawCanvas();
+    showToast('已添加 SAM 分割标注');
+}
+
+function drawSamOverlay(ctx, displayRatio, imgX, imgY) {
+    if (!samMaskPolygons || samMaskPolygons.length === 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+
+    samMaskPolygons.forEach(polygon => {
+        if (polygon.length < 3) return;
+        ctx.beginPath();
+        ctx.moveTo(polygon[0][0] * displayRatio + imgX, polygon[0][1] * displayRatio + imgY);
+        for (let i = 1; i < polygon.length; i++) {
+            ctx.lineTo(polygon[i][0] * displayRatio + imgX, polygon[i][1] * displayRatio + imgY);
+        }
+        ctx.closePath();
+        ctx.fillStyle = '#4a9eff';
+        ctx.fill();
+        ctx.strokeStyle = '#4a9eff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    });
+
+    ctx.restore();
+}
+
+function drawSamPrompts(ctx, displayRatio, imgX, imgY) {
+    samPrompts.forEach(p => {
+        if (p.type === 'point') {
+            const px = p.x * displayRatio + imgX;
+            const py = p.y * displayRatio + imgY;
+            ctx.beginPath();
+            ctx.arc(px, py, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = p.label === 1 ? '#00ff00' : '#ff0000';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 标签文字
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 10px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(p.label === 1 ? '+' : '-', px, py);
+        }
+    });
+}
+
+function drawSamDraggingBox(ctx, displayRatio, imgX, imgY) {
+    if (!samBoxStart) return;
+
+    ctx.save();
+    ctx.strokeStyle = '#4a9eff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    const sx = samBoxStart.x * displayRatio + imgX;
+    const sy = samBoxStart.y * displayRatio + imgY;
+    ctx.strokeRect(sx - 50, sy - 50, 100, 100);
+    ctx.restore();
 }
 
 // 绘制控制点
@@ -1476,9 +1814,16 @@ function saveClasses() {
 
 // 加载图片列表
 function loadImages() {
+    const loadingEl = document.getElementById('imageLoadingIndicator');
+    const imageList = document.getElementById('imageList');
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (imageList) imageList.style.display = 'none';
+
     fetch('/api/images')
         .then(response => response.json())
         .then(data => {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (imageList) imageList.style.display = '';
             window.allImages = data.images;
             updateImageList(data.images);
             updateImageCount(data.images.length);
@@ -1507,6 +1852,10 @@ function loadImages() {
             }
         })
         .catch(error => {
+            const loadingEl = document.getElementById('imageLoadingIndicator');
+            const imageList = document.getElementById('imageList');
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (imageList) imageList.style.display = '';
             console.error('加载图片列表失败:', error);
             showToast('加载图片列表失败');
         });
@@ -1560,7 +1909,12 @@ function updateImageList(images) {
 
 // 更新图片计数
 function updateImageCount(count) {
-    document.getElementById('imageCount').textContent = `共 ${count} 张图片`;
+    document.getElementById('imageTotal').textContent = count;
+    // 保持当前索引显示（selectImage 中会更新）
+    const currentIdx = document.getElementById('imageCount');
+    if (!currentIdx.textContent.includes('/')) {
+        currentIdx.textContent = count > 0 ? '1/' + count : '0/0';
+    }
 }
 
 // 旋转当前图片
@@ -1632,9 +1986,16 @@ function selectImage(imageName, skipLoadAnnotations = false) {
     });
     
     currentImage = imageName;
-    zoomScale = 1.0; // 切换图片时重置缩放
-    panOffsetX = 0; // 切换图片时重置平移
+    zoomScale = 1.0;
+    panOffsetX = 0;
     panOffsetY = 0;
+
+    // 更新当前图片位置索引
+    const allImgs = window.allImages || [];
+    const idx = allImgs.findIndex(img => img.name === imageName);
+    if (idx !== -1) {
+        document.getElementById('imageCount').textContent = (idx + 1) + '/' + allImgs.length;
+    }
 
     // 隐藏无图片提示
     document.getElementById('noImageMessage').style.display = 'none';
@@ -2738,12 +3099,16 @@ function loadShortcutSettings() {
     const savedSettings = localStorage.getItem('xclabelSettings');
     if (savedSettings) {
         shortcutSettings = { ...shortcutSettings, ...JSON.parse(savedSettings) };
-        
-        // 更新设置表单中的值
-        document.getElementById('clearShortcut').value = shortcutSettings.clearShortcut;
-        document.getElementById('saveShortcut').value = shortcutSettings.saveShortcut;
-        document.getElementById('prevImageShortcut').value = shortcutSettings.prevImageShortcut;
-        document.getElementById('nextImageShortcut').value = shortcutSettings.nextImageShortcut;
+
+        // 更新设置表单中的值（这些元素可能不存在于所有页面）
+        const clearEl = document.getElementById('clearShortcut');
+        if (clearEl) clearEl.value = shortcutSettings.clearShortcut;
+        const saveEl = document.getElementById('saveShortcut');
+        if (saveEl) saveEl.value = shortcutSettings.saveShortcut;
+        const prevEl = document.getElementById('prevImageShortcut');
+        if (prevEl) prevEl.value = shortcutSettings.prevImageShortcut;
+        const nextEl = document.getElementById('nextImageShortcut');
+        if (nextEl) nextEl.value = shortcutSettings.nextImageShortcut;
     }
 }
 
@@ -2769,6 +3134,21 @@ function parseShortcut(shortcutStr) {
 
 // 处理键盘快捷键
 function handleKeyDown(e) {
+    // SAM 模式键盘操作（优先处理）
+    if (samMode) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            confirmSamMask();
+            return;
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            exitSamMode();
+            switchTool('rect');
+            return;
+        }
+    }
+
     // 撤销 (Ctrl+Z)
     if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();

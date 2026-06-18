@@ -449,22 +449,31 @@ class AIAutoLabeler:
             else:
                 api_endpoint = f"{api_endpoint.rstrip('/')}/chat/completions"
 
-        # 读取图像并压缩，减少base64编码后的大小
+        # 读取图像
         img = cv2.imread(image_path)
         if img is None:
             raise ValueError(f"无法读取图像: {image_path}")
 
-        # 保存原始图片尺寸（不缩放，直接使用原始尺寸）
+        # 保存原始图片尺寸
         original_h, original_w = img.shape[:2]
-        scaled_w, scaled_h = original_w, original_h  # 不缩放，直接使用原始尺寸
-        scale = 1.0  # 缩放比例为1，不进行缩放
-        upscale = 1.0  # 放大比例为1，不进行放大
 
-        # 不压缩图像，直接使用原始尺寸
-        # 这样大模型返回的坐标就是基于原始尺寸的，不需要进行坐标转换
+        # 限制图片最大边长，减少 API tokens 消耗
+        # 同时避免 VLM 服务端自行缩放导致坐标不匹配
+        max_dim = 1024
+        if original_w > max_dim or original_h > max_dim:
+            scale = max_dim / max(original_w, original_h)
+            scaled_w = int(original_w * scale)
+            scaled_h = int(original_h * scale)
+            img_resized = cv2.resize(img, (scaled_w, scaled_h), interpolation=cv2.INTER_AREA)
+        else:
+            scale = 1.0
+            scaled_w, scaled_h = original_w, original_h
+            img_resized = img
 
-        # 转换为JPEG格式，降低质量
-        _, buffer = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+        upscale = 1.0 / scale  # 坐标放大倍数
+
+        # 转换为JPEG格式
+        _, buffer = cv2.imencode('.jpg', img_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
         image_base64 = base64.b64encode(buffer).decode("utf-8")
 
         # 构建API请求体
@@ -482,7 +491,7 @@ class AIAutoLabeler:
                         },
                         {
                             "type": "text",
-                            "text": self.prompt
+                            "text": f"{self.prompt}\n\n图片原始尺寸为 {original_w}x{original_h} 像素，请返回基于此原始尺寸的坐标。"
                         }
                     ]
                 }

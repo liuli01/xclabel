@@ -589,6 +589,29 @@
                                 <input type="number" id="timeout" value="30" min="1" max="300" class="with-icon">
                             </div>
                         </div>
+                        <div class="form-group">
+                            <label for="samModelType">SAM 分割模型</label>
+                            <div class="input-with-icon">
+                                <i class="fas fa-cut"></i>
+                                <select id="samModelType" class="with-icon">
+                                    <option value="tiny">SAM 2 Hiera Tiny（快速）</option>
+                                    <option value="small" selected>SAM 2 Hiera Small（推荐）</option>
+                                    <option value="base_plus">SAM 2 Hiera Base+（高精度）</option>
+                                </select>
+                            </div>
+                            <small style="color: #888; font-size: 0.8em;">切换后自动重载模型，需对应权重文件存在于 models/ 目录</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="samMaskMode">SAM 多边形合并方式</label>
+                            <div class="input-with-icon">
+                                <i class="fas fa-object-group"></i>
+                                <select id="samMaskMode" class="with-icon">
+                                    <option value="best">交集（仅最佳 Mask，推荐）</option>
+                                    <option value="all">并集（所有候选 Mask）</option>
+                                </select>
+                            </div>
+                            <small style="color: #888; font-size: 0.8em;">交集=只取评分最高的一个；并集=合并多个候选分割结果</small>
+                        </div>
                     </div>
 
                     <div class="tool-section">
@@ -610,6 +633,7 @@
                     <button class="tab-btn active" data-tab="image" onclick="switchTab('image')">图片标注</button>
                     <button class="tab-btn" data-tab="video" onclick="switchTab('video')">视频标注</button>
                     <button class="tab-btn" data-tab="api-test" onclick="switchTab('api-test')">API测试</button>
+                    <button class="tab-btn" data-tab="vlm-sam" onclick="switchTab('vlm-sam')">智能分割测试</button>
                 </div>
 
                 <!-- 标签页内容 -->
@@ -781,14 +805,37 @@
                                     <label for="apiTestPrompt">可选提示词（不输入则使用左侧公用提示词）</label>
                                     <textarea id="apiTestPrompt" rows="2" placeholder=""></textarea>
                                 </div>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-play"></i> 测试API
-                                </button>
-                                <div id="apiTestLoading" class="loading-indicator" style="display: none; margin-left: 10px;">
-                                    <i class="fas fa-spinner fa-spin"></i> 正在测试...
+                                <div style="display: flex; align-items: center; gap: 15px; margin-top: 10px; flex-wrap: wrap;">
+                                    <button type="submit" class="btn btn-primary" id="testApiBtn">
+                                        <i class="fas fa-play"></i> 测试API
+                                    </button>
+                                    <div id="apiTestLoading" class="loading-indicator" style="display: none;">
+                                        <i class="fas fa-spinner fa-spin"></i> 正在测试...
+                                    </div>
                                 </div>
                             </form>
                             <div id="apiTestResult" class="result-area" style="margin-top: 20px; display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- 智能分割测试 -->
+                    <div class="tab-pane" id="vlm-sam-tab">
+                        <div class="card">
+                            <h3><i class="fas fa-magic"></i> 智能分割测试</h3>
+                            <p style="color: #666; margin-bottom: 15px;">上传一张图片，先由 VLM 检测物体，再用 SAM 2 对每个检测框做精细化分割。</p>
+                            <form id="vlmSamForm">
+                                <div class="form-group">
+                                    <label for="vlmSamImage">测试图片</label>
+                                    <input type="file" id="vlmSamImage" accept="image/*">
+                                </div>
+                                <button type="submit" class="btn btn-info">
+                                    <i class="fas fa-magic"></i> 执行 VLM+SAM 精化
+                                </button>
+                                <div id="vlmSamLoading" class="loading-indicator" style="display: none; margin-left: 10px;">
+                                    <i class="fas fa-spinner fa-spin"></i> 正在处理...
+                                </div>
+                            </form>
+                            <div id="vlmSamResult" class="result-area" style="margin-top: 20px; display: none;"></div>
                         </div>
                     </div>
                 </div>
@@ -850,7 +897,13 @@
                 e.preventDefault();
                 testApi();
             });
-            
+
+            // 智能分割测试表单
+            document.getElementById('vlmSamForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                testVlmSam();
+            });
+
             // 视频文件上传事件
             document.getElementById('videoUpload').addEventListener('change', function(e) {
                 handleVideoUpload(e.target.files[0]);
@@ -945,25 +998,78 @@
 
         // 加载API配置
         function loadApiConfig() {
-            fetch('/api/load-api-config')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const config = data.config;
+            Promise.all([
+                fetch('/api/load-api-config').then(r => r.json()),
+                fetch('/api/sam/models').then(r => r.json())
+            ])
+            .then(([configData, samData]) => {
+                if (configData.success) {
+                    const config = configData.config;
                     document.getElementById('inferenceTool').value = config.inferenceTool;
                     document.getElementById('model').value = config.model;
                     document.getElementById('apiUrl').value = config.apiUrl;
                     document.getElementById('apiKey').value = config.apiKey;
                     document.getElementById('timeout').value = config.timeout;
                     document.getElementById('prompt').value = config.prompt;
-                } else {
-                    console.error('加载API配置失败：', data.error);
+                    if (config.samModelType) {
+                        document.getElementById('samModelType').value = config.samModelType;
+                    }
+                    if (config.samMaskMode) {
+                        document.getElementById('samMaskMode').value = config.samMaskMode;
+                    }
+                }
+                // 同步 SAM 模型下拉框与后端实际加载的模型一致
+                if (samData.current && samData.models) {
+                    const select = document.getElementById('samModelType');
+                    if (select.value !== samData.current) {
+                        // 如果下拉框的值和后端不一致，以后端为准
+                        if (Array.from(select.options).some(o => o.value === samData.current)) {
+                            select.value = samData.current;
+                        }
+                    }
+                    // 标记不可用的模型
+                    samData.models.forEach(m => {
+                        const opt = select.querySelector(`option[value="${m.id}"]`);
+                        if (opt) {
+                            opt.disabled = !m.available;
+                            opt.title = m.available ? '' : '权重文件不存在';
+                        }
+                    });
                 }
             })
             .catch(error => {
-                console.error('请求失败：', error.message);
+                console.error('加载配置失败：', error.message);
             });
         }
+
+        // SAM 模型切换事件
+        document.addEventListener('DOMContentLoaded', function() {
+            const samSelect = document.getElementById('samModelType');
+            if (samSelect) {
+                samSelect.addEventListener('change', function() {
+                    const modelType = this.value;
+                    fetch('/api/sam/switch-model', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model_type: modelType })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(`✅ SAM 模型已切换为: ${modelType}`);
+                        } else {
+                            alert('❌ 切换失败: ' + (data.error || '未知错误'));
+                            // 恢复为之前的值
+                            loadApiConfig();
+                        }
+                    })
+                    .catch(err => {
+                        alert('请求失败: ' + err.message);
+                        loadApiConfig();
+                    });
+                });
+            }
+        });
 
         // 获取API配置
         function getApiConfig() {
@@ -973,7 +1079,9 @@
                 apiUrl: document.getElementById('apiUrl').value,
                 apiKey: document.getElementById('apiKey').value,
                 timeout: document.getElementById('timeout').value,
-                prompt: document.getElementById('prompt').value
+                prompt: document.getElementById('prompt').value,
+                samModelType: document.getElementById('samModelType').value,
+                samMaskMode: document.getElementById('samMaskMode').value
             };
         }
 
@@ -1301,12 +1409,11 @@
             });
         }
 
-        // 测试API
+        // 测试API（简易：仅返回JSON）
         function testApi() {
             const files = document.getElementById('testImage').files;
             const config = getApiConfig();
-            
-            // 获取API测试标签页特定的提示词，如果有则优先使用
+
             const apiTestPrompt = document.getElementById('apiTestPrompt').value.trim();
             const prompt = apiTestPrompt || config.prompt;
 
@@ -1323,29 +1430,25 @@
             formData.append('prompt', prompt);
             formData.append('model', config.model);
             formData.append('inferenceTool', config.inferenceTool);
+            formData.append('use_sam', 'false');
 
-            // 记录开始时间
             const startTime = new Date();
 
-            // 显示加载状态
             document.getElementById('apiTestLoading').style.display = 'inline-flex';
             document.getElementById('apiTestResult').style.display = 'none';
 
-            // 发送请求
             fetch('/api/auto-label/test', {
                 method: 'POST',
                 body: formData
             })
             .then(response => response.json())
             .then(data => {
-                // 计算结束时间和耗时
                 const endTime = new Date();
                 const duration = endTime - startTime;
 
                 document.getElementById('apiTestLoading').style.display = 'none';
                 document.getElementById('apiTestResult').style.display = 'block';
-                
-                // 构建带有时间信息的结果
+
                 const resultWithTime = {
                     success: data.success,
                     startTime: startTime.toLocaleString(),
@@ -1353,11 +1456,10 @@
                     duration: `${(duration / 1000).toFixed(2)}秒`,
                     result: data.result || data.error || data
                 };
-                
+
                 document.getElementById('apiTestResult').innerHTML = JSON.stringify(resultWithTime, null, 2);
             })
             .catch(error => {
-                // 计算结束时间和耗时
                 const endTime = new Date();
                 const duration = endTime - startTime;
 
@@ -1367,6 +1469,108 @@
                                 结束时间: ${endTime.toLocaleString()}<br>
                                 总计耗时: ${(duration / 1000).toFixed(2)}秒`;
                 showMessage('apiTestResult', message, 'error');
+            });
+        }
+
+        // 智能分割测试（含预览图）
+        function testVlmSam() {
+            const files = document.getElementById('vlmSamImage').files;
+            const config = getApiConfig();
+
+            const prompt = config.prompt;
+
+            if (files.length === 0) {
+                showMessage('vlmSamResult', '请选择测试图片', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', files[0]);
+            formData.append('api_url', config.apiUrl);
+            formData.append('api_key', config.apiKey);
+            formData.append('timeout', config.timeout);
+            formData.append('prompt', prompt);
+            formData.append('model', config.model);
+            formData.append('inferenceTool', config.inferenceTool);
+            formData.append('use_sam', 'true');
+
+            const startTime = new Date();
+
+            document.getElementById('vlmSamLoading').style.display = 'inline-flex';
+            document.getElementById('vlmSamResult').style.display = 'none';
+
+            fetch('/api/auto-label/test', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                const endTime = new Date();
+                const duration = endTime - startTime;
+
+                document.getElementById('vlmSamLoading').style.display = 'none';
+                document.getElementById('vlmSamResult').style.display = 'block';
+
+                let html = '';
+                html += `<div style="margin-bottom: 10px; color: ${data.success ? '#28a745' : '#dc3545'};">
+                    <strong>状态:</strong> ${data.success ? '✅ 成功' : '❌ 失败'} |
+                    <strong>耗时:</strong> ${(duration / 1000).toFixed(2)}秒
+                </div>`;
+
+                if (data.rendered_image) {
+                    html += `<div style="margin-bottom: 15px;">
+                        <strong>VLM 检测结果:</strong><br>
+                        <img src="data:image/jpeg;base64,${data.rendered_image}"
+                             style="max-width: 100%; max-height: 500px; border: 1px solid #ddd; border-radius: 4px; margin-top: 5px;"
+                             class="clickable-image">
+                    </div>`;
+                }
+
+                if (data.sam_rendered_image) {
+                    html += `<div style="margin-bottom: 15px;">
+                        <strong>SAM 2 精化结果（绿色 Mask）:</strong><br>
+                        <img src="data:image/jpeg;base64,${data.sam_rendered_image}"
+                             style="max-width: 100%; max-height: 500px; border: 1px solid #4a9eff; border-radius: 4px; margin-top: 5px;"
+                             class="clickable-image">
+                    </div>`;
+                }
+
+                if (data.sam_refinements && data.sam_refinements.length > 0) {
+                    html += `<div style="margin-bottom: 15px; padding: 10px; background: #f0f8ff; border-radius: 4px;">
+                        <strong>🧠 SAM 2 精化详情:</strong>`;
+                    data.sam_refinements.forEach(function(ref, i) {
+                        html += `<div style="margin-top: 8px; padding: 8px; background: #fff; border-radius: 4px; border: 1px solid #e9ecef;">
+                            <strong>目标 ${i+1}:</strong> ${ref.label}<br>
+                            <strong>检测框:</strong> [${(ref.bbox || []).map(function(v) { return Math.round(v); }).join(', ')}]<br>`;
+                        if (ref.mask_polygons && ref.mask_polygons.length > 0) {
+                            html += `<strong>Mask:</strong> ${ref.mask_polygons.length} 个多边形，面积 ${ref.area} 像素 ✅`;
+                        } else if (ref.error) {
+                            html += `<span style="color: #dc3545;">❌ ${ref.error}</span>`;
+                        } else {
+                            html += `<span style="color: #888;">⚠️ 未生成多边形</span>`;
+                        }
+                        html += `</div>`;
+                    });
+                    html += `</div>`;
+                }
+
+                html += `<div style="margin-top: 10px;">
+                    <strong>JSON 结果:</strong>
+                    <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.85em; max-height: 300px; overflow-y: auto;">${JSON.stringify(data.result || data.error || data, null, 2)}</pre>
+                </div>`;
+
+                document.getElementById('vlmSamResult').innerHTML = html;
+            })
+            .catch(error => {
+                const endTime = new Date();
+                const duration = endTime - startTime;
+
+                document.getElementById('vlmSamLoading').style.display = 'none';
+                const message = `请求失败：${error.message}<br>
+                                开始时间: ${startTime.toLocaleString()}<br>
+                                结束时间: ${endTime.toLocaleString()}<br>
+                                总计耗时: ${(duration / 1000).toFixed(2)}秒`;
+                showMessage('vlmSamResult', message, 'error');
             });
         }
 
