@@ -801,6 +801,8 @@ return (el ? el.value.trim() : '') || 'untitled';
 
 // ── New ──
 function onNew(){
+resetNodeColors();
+lastRunResult = null;
 if(!confirm('清空画布？')) return;
 graph.clear();
 document.getElementById('wfName').value = 'my_pipeline';
@@ -884,6 +886,8 @@ toast('加载工作流列表失败');
 }
 
 function loadWorkflow(name){
+resetNodeColors();
+lastRunResult = null;
 setStatus('加载中...', '#ffa726');
 fetch('/api/wf/get?name='+encodeURIComponent(name))
 .then(function(r){ return r.json(); })
@@ -1067,7 +1071,21 @@ var map = {input:'输入', yolo:'YOLO检测', condition:'条件判断', vllm:'VL
 return map[type] || type;
 }
 
+function resetNodeColors(){
+  if(!graph || !graph._nodes) return;
+  graph._nodes.forEach(function(n){
+    n.boxcolor = null;
+    if(n._originalTitle){
+      n.title = n._originalTitle;
+      n._originalTitle = null;
+    }
+  });
+  if(graphcanvas) graphcanvas.setDirtyCanvas(true);
+}
+
 function executeWorkflow(){
+// Reset node colors from previous run
+resetNodeColors();
 var name = getWfName();
 if(!name){ toast('请输入名称'); return; }
 
@@ -1152,6 +1170,28 @@ data.errors.forEach(function(e){
 addLog('⚠️ '+e, 'log-error');
 });
 }
+
+	// Colorize nodes by status
+	var statusColors = {'ok': '#27ae60', 'error': '#e74c3c', 'skipped': '#f39c12'};
+	if(graph && graph._nodes){
+	  graph._nodes.forEach(function(n){
+	    var s = nodeStatus[n.id];
+	    if(s && statusColors[s]){
+	      n.boxcolor = statusColors[s];
+	    }
+	    if(s === 'ok' && nodeTimings[n.id] !== undefined){
+	      if(!n._originalTitle) n._originalTitle = n.title;
+	      n.title = n._originalTitle + ' ['+Math.round(nodeTimings[n.id])+'ms]';
+	    } else if(s === 'error'){
+	      if(!n._originalTitle) n._originalTitle = n.title;
+	      n.title = n._originalTitle + ' ❌';
+	    } else if(s === 'skipped'){
+	      if(!n._originalTitle) n._originalTitle = n.title;
+	      n.title = n._originalTitle + ' ⏭';
+	    }
+	  });
+	  graphcanvas.setDirtyCanvas(true);
+	}
 
 	// Show image previews
 	var previewEl = document.getElementById('imgPreview');
