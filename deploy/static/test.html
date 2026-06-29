@@ -443,8 +443,8 @@
             const reader = new FileReader();
             reader.onload = evt => {
                 currentImageData = evt.target.result;
-                document.querySelector('.upload-zone span').textContent = file.name;
-                document.querySelector('.upload-zone .hint').textContent = (file.size / 1024).toFixed(1) + ' KB';
+                document.querySelector('#uploadZone span').textContent = file.name;
+                document.querySelector('#uploadZone .hint').textContent = (file.size / 1024).toFixed(1) + ' KB';
                 toast('图片已加载');
             };
             reader.readAsDataURL(file);
