@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型测试 - xclabel-deploy</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+        .header { background: #fff; padding: 14px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 16px; }
+        .header h1 { font-size: 1.2em; display: flex; align-items: center; gap: 8px; }
+        .header .badge { font-size: 0.7em; background: #e8f4fd; color: #1976d2; padding: 2px 10px; border-radius: 10px; }
+        .container { max-width: 1300px; margin: 16px auto; padding: 0 16px; display: flex; gap: 16px; flex-wrap: wrap; }
+        .panel { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+        .panel h2 { font-size: 1em; color: #444; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+        .panel-left { flex: 0 0 340px; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
+        .panel-right { flex: 1; min-width: 500px; }
+        .form-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+        .form-group { flex: 1; min-width: 120px; }
+        .form-group label { display: block; margin-bottom: 3px; font-size: 0.82em; color: #666; font-weight: 500; }
+        select, input[type="text"], input[type="number"] { width: 100%; padding: 7px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 0.9em; transition: border .2s; }
+        select:focus, input:focus { outline: none; border-color: #4096ff; box-shadow: 0 0 0 2px rgba(64,150,255,.15); }
+        .btn { padding: 6px 14px; border-radius: 4px; border: none; cursor: pointer; font-size: 0.88em; display: inline-flex; align-items: center; gap: 5px; transition: opacity .15s; }
+        .btn:hover { opacity: .85; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        .btn-primary { background: #1677ff; color: #fff; }
+        .btn-success { background: #52c41a; color: #fff; }
+        .btn-danger { background: #ff4d4f; color: #fff; }
+        .btn-default { background: #f5f5f5; color: #333; border: 1px solid #d9d9d9; }
+        .engine-list { max-height: 260px; overflow-y: auto; }
+        .engine-item { padding: 8px 10px; border: 1px solid #e8e8e8; border-radius: 4px; margin-bottom: 6px; cursor: pointer; transition: all .15s; font-size: 0.85em; }
+        .engine-item:hover { border-color: #4096ff; background: #f6fbff; }
+        .engine-item.active { border-color: #1677ff; background: #e6f4ff; }
+        .engine-item .tag { display: inline-block; font-size: 0.75em; padding: 1px 6px; border-radius: 3px; margin-left: 4px; }
+        .engine-item .tag.model { background: #e6f7ff; color: #1890ff; }
+        .engine-item .tag.workflow { background: #f6ffed; color: #52c41a; }
+        .engine-item .meta { color: #888; font-size: 0.88em; margin-top: 3px; }
+        .engine-item .classes-preview { color: #999; font-size: 0.82em; margin-top: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .empty-state { text-align: center; color: #bbb; padding: 24px 0; font-size: 0.88em; }
+        .empty-state i { font-size: 2em; display: block; margin-bottom: 8px; }
+        .upload-zone { border: 2px dashed #d9d9d9; border-radius: 6px; padding: 16px; text-align: center; background: #fafafa; position: relative; min-height: 80px; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: border-color .2s; cursor: pointer; }
+        .upload-zone:hover { border-color: #4096ff; }
+        .upload-zone.dragover { border-color: #1677ff; background: #e6f4ff; }
+        .upload-zone input[type="file"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+        .upload-zone .hint { color: #999; font-size: 0.82em; margin-top: 4px; }
+        .result-area { position: relative; border: 1px solid #e8e8e8; border-radius: 6px; background: #fafafa; min-height: 400px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .result-area canvas { display: block; max-width: 100%; max-height: 600px; }
+        .result-area .placeholder { text-align: center; color: #bbb; padding: 40px; }
+        .result-area .placeholder i { font-size: 2.5em; display: block; margin-bottom: 10px; }
+        .result-info { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; font-size: 0.85em; color: #666; }
+        .result-json { margin-top: 10px; border: 1px solid #e8e8e8; border-radius: 4px; }
+        .result-json .json-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: #fafafa; border-bottom: 1px solid #e8e8e8; font-size: 0.85em; }
+        .result-json pre { margin: 0; padding: 10px 14px; overflow: auto; font-size: 0.78em; line-height: 1.5; background: #fefefe; max-height: 300px; }
+        .toast { position: fixed; top: 16px; right: 16px; background: #333; color: #fff; padding: 10px 20px; border-radius: 6px; display: none; z-index: 10000; font-size: 0.9em; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 4px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .tag-input-wrap { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; min-height: 34px; align-items: center; }
+        .tag-input-wrap input { border: none; outline: none; flex: 1; min-width: 60px; padding: 2px 4px; font-size: 0.85em; }
+        .class-tag { display: inline-flex; align-items: center; gap: 3px; background: #e6f4ff; border: 1px solid #91caff; border-radius: 3px; padding: 1px 6px; font-size: 0.78em; }
+        .class-tag .remove { cursor: pointer; color: #999; font-size: 1.1em; line-height: 1; }
+        .class-tag .remove:hover { color: #ff4d4f; }
+        .load-form { display: flex; flex-direction: column; gap: 8px; }
+        .load-form .btn { align-self: flex-start; }
+        .loading-overlay { display: none; position: absolute; inset: 0; background: rgba(255,255,255,.7); align-items: center; justify-content: center; z-index: 10; }
+        .loading-overlay.show { display: flex; }
+        .progress-step { font-size: 0.85em; color: #666; }
+        @media (max-width: 860px) { .panel-left { flex: 1 1 100%; } .panel-right { flex: 1 1 100%; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><i class="fas fa-vial"></i> xclabel-deploy 模型测试</h1>
+        <span class="badge" id="deployStatus">检查中...</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-default" onclick="refreshEngines()"><i class="fas fa-sync-alt"></i> 刷新</button>
+        <a href="/docs" target="_blank" class="btn btn-default"><i class="fas fa-book"></i> API 文档</a>
+    </div>
+
+    <div class="container">
+        <!-- 左侧面板 -->
+        <div class="panel-left">
+            <!-- 一键预测 -->
+            <div class="panel">
+                <h2><i class="fas fa-rocket"></i> 一键预测 <span style="color:#999;font-weight:400;font-size:0.75em;">v1/predict</span></h2>
+                <div class="load-form">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1;">
+                            <label>服务端地址</label>
+                            <input type="text" id="predictServerUrl" value="http://127.0.0.1:9924" placeholder="服务端地址">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1;">
+                            <label>模型路径 <span style="color:#999;font-weight:400;">project_id/model_version</span></label>
+                            <input type="text" id="predictModel" value="sv30_seg/20260618_172731" placeholder="project_id/model_version">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="max-width:120px;">
+                            <label>置信度</label>
+                            <input type="number" id="predictConfidence" value="0.25" step="0.05" min="0" max="1">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>测试图片</label>
+                            <div class="upload-zone" id="predictUploadZone" style="min-height:50px;padding:8px;">
+                                <span style="color:#666;font-size:0.85em;">点击上传图片</span>
+                                <input type="file" id="predictImageInput" accept="image/*">
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-success" id="predictBtn"><i class="fas fa-rocket"></i> 一键预测</button>
+                    <span id="predictStatus" style="font-size:0.82em;color:#999;margin-left:8px;"></span>
+                </div>
+            </div>
+
+            <!-- 加载模型 -->
+            <div class="panel">
+                <h2><i class="fas fa-download"></i> 加载模型</h2>
+                <div class="load-form">
+                    <div class="form-row">
+                        <div class="form-group" style="min-width:100px;">
+                            <label>project_id</label>
+                            <input type="text" id="loadProjectId" value="sv30_seg" placeholder="工程名">
+                        </div>
+                        <div class="form-group" style="min-width:130px;">
+                            <label>model_version</label>
+                            <input type="text" id="loadVersion" value="20260618_172731" placeholder="版本号">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>task_type</label>
+                            <select id="loadTaskType">
+                                <option value="detect">detect — 目标检测</option>
+                                <option value="segment" selected>segment — 实例分割</option>
+                                <option value="classify">classify — 分类</option>
+                                <option value="pose">pose — 姿态估计</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>server_url <span style="color:#999;font-weight:400;">(可选)</span></label>
+                            <input type="text" id="loadServerUrl" placeholder="默认: http://127.0.0.1:9924">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="min-width:100px;">
+                            <label><input type="checkbox" id="useLocalPath" onchange="toggleLoadMode()"> 本地路径</label>
+                            <input type="text" id="loadLocalPath" placeholder="/app/models/xxx" disabled style="background:#f5f5f5;">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>class 标签 <span style="color:#999;font-weight:400;">(逗号分隔, 留空从 server 加载)</span></label>
+                        <div class="tag-input-wrap" id="classTagWrap">
+                            <input type="text" id="classInput" placeholder="输入标签名后按回车添加" style="min-width:80px;">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="loadModelBtn"><i class="fas fa-cloud-download-alt"></i> 加载模型</button>
+                </div>
+            </div>
+
+            <!-- 已加载引擎列表 / 下拉选择 -->
+            <div class="panel">
+                <h2><i class="fas fa-microchip"></i> 选择引擎 <span id="engineCount" style="font-weight:400;color:#999;font-size:0.85em;"></span></h2>
+                <div class="form-group">
+                    <label>已加载引擎（双击卸载）</label>
+                    <select id="engineSelect" onchange="onEngineSelectChange()">
+                        <option value="">— 请选择引擎 —</option>
+                    </select>
+                </div>
+                <div id="selectedEngineMeta" style="margin-top:8px;font-size:0.82em;color:#888;"></div>
+            </div>
+        </div>
+
+        <!-- 右侧面板：推理测试 -->
+        <div class="panel-right">
+            <div class="panel">
+                <h2><i class="fas fa-play-circle"></i> 推理测试 <span id="selectedEngineDisplay" style="color:#999;font-weight:400;font-size:0.85em;"></span></h2>
+
+                <div class="form-row">
+                    <div class="form-group" style="flex:2;">
+                        <label>测试图片</label>
+                        <div class="upload-zone" id="uploadZone">
+                            <i class="fas fa-image" style="font-size:1.3em;color:#999;margin-bottom:4px;"></i>
+                            <span style="color:#666;font-size:0.9em;">点击或拖拽上传图片</span>
+                            <span class="hint">支持 JPG / PNG</span>
+                            <input type="file" id="imageInput" accept="image/*">
+                        </div>
+                    </div>
+                    <div class="form-group" style="max-width:100px;">
+                        <label>置信度</label>
+                        <input type="number" id="confThreshold" value="0.25" step="0.05" min="0" max="1">
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+                    <button class="btn btn-primary" id="inferBtn" disabled><i class="fas fa-play"></i> 开始推理</button>
+                    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85em;">
+                        <input type="checkbox" id="showLabels" checked> 显示标注
+                    </label>
+                    <button class="btn btn-default" id="clearBtn" style="font-size:0.82em;">清除</button>
+                    <span id="inferStatus" style="font-size:0.85em;color:#999;"></span>
+                </div>
+
+                <div class="result-area" id="resultArea">
+                    <canvas id="resultCanvas"></canvas>
+                    <div class="placeholder" id="resultPlaceholder">
+                        <i class="fas fa-image"></i>
+                        选择引擎和图片后点击「开始推理」
+                    </div>
+                    <div class="loading-overlay" id="inferLoading">
+                        <span class="spinner"></span> 推理中...
+                    </div>
+                </div>
+
+                <div class="result-info" id="resultInfo"></div>
+
+                <div class="result-json" id="resultJsonPanel" style="display:none;">
+                    <div class="json-header">
+                        <span><i class="fas fa-code"></i> 推理结果 (JSON)</span>
+                        <button class="btn btn-default" id="copyJsonBtn" style="font-size:0.8em;padding:2px 8px;"><i class="fas fa-copy"></i> 复制</button>
+                    </div>
+                    <pre id="jsonOutput"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
+    <script>
+        // ── State ──
+        let engines = [];
+        let selectedEngineId = null;
+        let currentImageData = null;   // base64 data URL
+        let currentResult = null;
+        let currentTaskType = 'detect';
+        let classTags = [];
+        let deployBase = '';           // same-origin
+
+        // ── Toast ──
+        function toast(msg, dur) {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.style.display = 'block';
+            clearTimeout(t._t); t._t = setTimeout(() => t.style.display = 'none', dur || 2500);
+        }
+
+        // ── Class tag input ──
+        function renderClassTags() {
+            const wrap = document.getElementById('classTagWrap');
+            const input = document.getElementById('classInput');
+            wrap.innerHTML = '';
+            classTags.forEach((c, i) => {
+                const tag = document.createElement('span');
+                tag.className = 'class-tag';
+                tag.innerHTML = `${c} <span class="remove" data-idx="${i}">&times;</span>`;
+                tag.querySelector('.remove').onclick = () => { classTags.splice(i, 1); renderClassTags(); };
+                wrap.appendChild(tag);
+            });
+            wrap.appendChild(input);
+            input.focus();
+        }
+        document.getElementById('classInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const val = e.target.value.trim();
+                if (val && !classTags.includes(val)) { classTags.push(val); e.target.value = ''; renderClassTags(); }
+            }
+        });
+
+        // ── Health check ──
+        async function checkHealth() {
+            try {
+                const r = await fetch(deployBase + '/health');
+                const d = await r.json();
+                const badge = document.getElementById('deployStatus');
+                badge.textContent = '引擎: ' + d.engines_loaded + ' | YOLO: ' + (d.yolo_available ? '✅' : '❌');
+                badge.className = 'badge';
+                badge.style.background = d.status === 'ok' ? '#e8f4fd' : '#fff0f0';
+                badge.style.color = d.status === 'ok' ? '#1976d2' : '#d32f2f';
+                return d;
+            } catch (e) {
+                document.getElementById('deployStatus').textContent = '❌ 连接失败';
+                document.getElementById('deployStatus').style.color = '#d32f2f';
+                return null;
+            }
+        }
+
+        // ── Engines ──
+        async function refreshEngines() {
+            try {
+                const r = await fetch(deployBase + '/engines');
+                const d = await r.json();
+                engines = d.engines || [];
+                renderEngines();
+                document.getElementById('engineCount').textContent = '(' + engines.length + ')';
+            } catch (e) {
+                toast('获取引擎列表失败');
+            }
+        }
+
+        function renderEngines() {
+            const sel = document.getElementById('engineSelect');
+            const meta = document.getElementById('selectedEngineMeta');
+            // Preserve selected value if still valid
+            const prevVal = sel.value;
+            sel.innerHTML = '<option value="">— 请选择引擎 —</option>';
+
+            if (!engines.length) {
+                document.getElementById('inferBtn').disabled = true;
+                document.getElementById('engineCount').textContent = '(0)';
+                sel.disabled = true;
+                meta.innerHTML = '<span style="color:#bbb;">暂无已加载引擎，请先加载模型</span>';
+                return;
+            }
+
+            sel.disabled = false;
+            engines.forEach(eng => {
+                const opt = document.createElement('option');
+                opt.value = eng.engine_id;
+                const task = eng.metadata?.task_type || '?';
+                const classCount = eng.metadata?.classes?.length || 0;
+                opt.textContent = `${eng.engine_id} [${task}]${classCount ? ' (' + classCount + '类)' : ''}`;
+                sel.appendChild(opt);
+            });
+
+            // Restore or select first
+            if (prevVal && engines.find(e => e.engine_id === prevVal)) {
+                sel.value = prevVal;
+            } else {
+                sel.value = engines[0].engine_id;
+            }
+            onEngineSelectChange();
+            document.getElementById('engineCount').textContent = '(' + engines.length + ')';
+        }
+
+        function onEngineSelectChange() {
+            const sel = document.getElementById('engineSelect');
+            const meta = document.getElementById('selectedEngineMeta');
+            const id = sel.value;
+
+            if (!id) {
+                selectedEngineId = null;
+                document.getElementById('inferBtn').disabled = true;
+                meta.innerHTML = '';
+                document.getElementById('selectedEngineDisplay').textContent = '';
+                return;
+            }
+
+            selectedEngineId = id;
+            const eng = engines.find(e => e.engine_id === id);
+            if (eng) {
+                currentTaskType = eng.metadata?.task_type || 'detect';
+                document.getElementById('inferBtn').disabled = false;
+                document.getElementById('selectedEngineDisplay').textContent = '→ ' + id;
+
+                // Show metadata
+                const parts = [];
+                parts.push('类型: ' + (eng.type || '?'));
+                parts.push('任务: ' + currentTaskType);
+                parts.push('推理: ' + eng.inference_count + '次');
+                if (eng.metadata?.classes) {
+                    const names = eng.metadata.classes;
+                    parts.push('标签: ' + (names.length > 10 ? names.slice(0, 10).join(', ') + '...' : names.join(', ')));
+                }
+                meta.innerHTML = parts.join(' | ');
+            }
+        }
+
+        // ── Double-click on dropdown to unload ──
+        document.getElementById('engineSelect').addEventListener('dblclick', async () => {
+            const id = document.getElementById('engineSelect').value;
+            if (!id) return;
+            if (!confirm('卸载引擎: ' + id + ' ?')) return;
+            try {
+                const r = await fetch(deployBase + '/unload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ engine_id: id }),
+                });
+                if (!r.ok) throw new Error('卸载失败');
+                toast('已卸载: ' + id);
+                await refreshEngines();
+                checkHealth();
+            } catch (e) {
+                toast('❌ ' + e.message);
+            }
+        });
+
+        // ── Toggle load mode (server vs local) ──
+        function toggleLoadMode() {
+            const useLocal = document.getElementById('useLocalPath').checked;
+            document.getElementById('loadLocalPath').disabled = !useLocal;
+            document.getElementById('loadLocalPath').style.background = useLocal ? '#fff' : '#f5f5f5';
+            document.getElementById('loadServerUrl').disabled = useLocal;
+        }
+
+        // ── Load model ──
+        document.getElementById('loadModelBtn').addEventListener('click', async () => {
+            const projectId = document.getElementById('loadProjectId').value.trim();
+            const version = document.getElementById('loadVersion').value.trim();
+            if (!projectId || !version) { toast('请填写 project_id 和 model_version'); return; }
+
+            const btn = document.getElementById('loadModelBtn');
+            btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 加载中...';
+
+            const body = {
+                project_id: projectId,
+                model_version: version,
+                task_type: document.getElementById('loadTaskType').value,
+            };
+            const serverUrl = document.getElementById('loadServerUrl').value.trim();
+            if (serverUrl) body.server_url = serverUrl;
+            if (classTags.length) body.classes = classTags;
+            if (document.getElementById('useLocalPath').checked) {
+                const localPath = document.getElementById('loadLocalPath').value.trim();
+                if (!localPath) { toast('请填写本地模型路径'); btn.disabled = false; btn.innerHTML = '<i class=\"fas fa-cloud-download-alt\"></i> 加载模型'; return; }
+                body.local_path = localPath;
+            }
+
+            try {
+                const r = await fetch(deployBase + '/load/model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.detail || '加载失败');
+                toast('模型加载成功: ' + d.engine_id);
+                await refreshEngines();
+                checkHealth();
+            } catch (e) {
+                toast('❌ ' + e.message);
+            } finally {
+                btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> 加载模型';
+            }
+        });
+
+        // ── Image upload ──
+        function handleImageFile(file) {
+            if (!file || !file.type.startsWith('image/')) { toast('仅支持图片'); return; }
+            const reader = new FileReader();
+            reader.onload = evt => {
+                currentImageData = evt.target.result;
+                document.querySelector('.upload-zone span').textContent = file.name;
+                document.querySelector('.upload-zone .hint').textContent = (file.size / 1024).toFixed(1) + ' KB';
+                toast('图片已加载');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        document.getElementById('imageInput').addEventListener('change', e => {
+            if (e.target.files.length) handleImageFile(e.target.files[0]);
+        });
+
+        const zone = document.getElementById('uploadZone');
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', e => { e.preventDefault(); zone.classList.remove('dragover'); });
+        zone.addEventListener('drop', e => {
+            e.preventDefault(); zone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleImageFile(e.dataTransfer.files[0]);
+        });
+
+        // ── Infer ──
+        document.getElementById('inferBtn').addEventListener('click', infer);
+        document.getElementById('clearBtn').addEventListener('click', clearResult);
+
+        async function infer() {
+            if (!selectedEngineId) { toast('请先选择引擎'); return; }
+            if (!currentImageData) { toast('请先上传图片'); return; }
+
+            const loading = document.getElementById('inferLoading');
+            const status = document.getElementById('inferStatus');
+            loading.classList.add('show');
+            status.textContent = '推理中...';
+            document.getElementById('inferBtn').disabled = true;
+
+            try {
+                const body = {
+                    engine_id: selectedEngineId,
+                    image: currentImageData.split(',')[1],  // base64 without header
+                    confidence_threshold: parseFloat(document.getElementById('confThreshold').value) || 0.25,
+                };
+
+                const r = await fetch(deployBase + '/infer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.detail || '推理失败');
+
+                currentResult = data.detections || [];
+                renderResult(currentImageData, currentResult, currentTaskType);
+
+                // JSON
+                const jsonPanel = document.getElementById('resultJsonPanel');
+                document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+                jsonPanel.style.display = 'block';
+
+                // Info
+                const info = document.getElementById('resultInfo');
+                info.innerHTML = `
+                    <span>⏱ ${data.inference_time_ms || 0} ms</span>
+                    <span>|</span>
+                    <span>📦 ${data.engine_id}</span>
+                    <span>|</span>
+                    <span>🎯 ${currentResult.length} 个检测</span>
+                `;
+                status.textContent = '✅ 完成 (' + currentResult.length + ' 个目标)';
+
+                await refreshEngines();
+            } catch (e) {
+                toast('❌ ' + e.message);
+                status.textContent = '❌ 失败';
+            } finally {
+                loading.classList.remove('show');
+                document.getElementById('inferBtn').disabled = false;
+            }
+        }
+
+        function clearResult() {
+            const canvas = document.getElementById('resultCanvas');
+            const placeholder = document.getElementById('resultPlaceholder');
+            canvas.style.display = 'none';
+            placeholder.style.display = 'block';
+            document.getElementById('resultJsonPanel').style.display = 'none';
+            document.getElementById('resultInfo').innerHTML = '';
+            document.getElementById('inferStatus').textContent = '';
+            currentResult = null;
+        }
+
+        // ── Render result on canvas ──
+        function renderResult(imageSrc, detections, taskType) {
+            const canvas = document.getElementById('resultCanvas');
+            const placeholder = document.getElementById('resultPlaceholder');
+            const showLabels = document.getElementById('showLabels').checked;
+            const ctx = canvas.getContext('2d');
+
+            // Ensure we have metadata about class names from the engine
+            const eng = engines.find(e => e.engine_id === selectedEngineId);
+            const classNames = eng?.metadata?.classes || [];
+
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                canvas.style.display = 'block';
+                placeholder.style.display = 'none';
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+
+                if (!showLabels) return;
+
+                const colors = ['#FF5733','#33FF57','#3357FF','#FF33F5','#F5FF33','#33FFF5','#FF8C00','#8B00FF'];
+
+                detections.forEach((d, i) => {
+                    const color = colors[i % colors.length];
+                    const hasPolygon = d.points && d.points.length > 2;
+                    const bbox = d.bbox;
+                    const bx1 = bbox ? bbox[0] : 0;
+                    const by1 = bbox ? bbox[1] : 0;
+
+                    // Draw bbox (skip if polygon exists — segment mode)
+                    if (!hasPolygon && bbox && bbox.length >= 4) {
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]);
+                    }
+
+                    // Draw label
+                    const label = d.class_name || classNames[d.class_id] || ('class_' + d.class_id);
+                    const conf = d.confidence ? (d.confidence * 100).toFixed(0) + '%' : '';
+                    const labelText = (label ? label : '') + (conf ? ' ' + conf : '');
+
+                    if (labelText) {
+                        ctx.font = 'bold 13px sans-serif';
+                        const metrics = ctx.measureText(labelText);
+                        const labelH = 18;
+                        const labelX = bx1;
+                        const labelY = by1 - labelH < 0 ? by1 + 2 : by1 - labelH;
+
+                        ctx.fillStyle = color;
+                        ctx.fillRect(labelX, labelY, metrics.width + 8, labelH);
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(labelText, labelX + 4, labelY + 13);
+                    }
+
+                    // Segmentation mask support (polygon points)
+                    if (d.points && d.points.length > 2) {
+                        ctx.globalAlpha = 0.3;
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.moveTo(d.points[0].x, d.points[0].y);
+                        for (let j = 1; j < d.points.length; j++) {
+                            ctx.lineTo(d.points[j].x, d.points[j].y);
+                        }
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.globalAlpha = 1.0;
+                        ctx.stroke();  // polygon outline
+                    }
+                });
+            };
+            img.src = imageSrc;
+        }
+
+        // ── Copy JSON ──
+        document.getElementById('copyJsonBtn').addEventListener('click', () => {
+            const text = document.getElementById('jsonOutput').textContent;
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(() => toast('JSON 已复制')).catch(() => toast('复制失败'));
+        });
+
+        // ── One-click Predict (v1/predict) ──
+        let predictImageData = null;
+
+        document.getElementById('predictImageInput').addEventListener('change', e => {
+            if (e.target.files.length) {
+                const file = e.target.files[0];
+                if (!file.type.startsWith('image/')) { toast('仅支持图片'); return; }
+                const reader = new FileReader();
+                reader.onload = evt => {
+                    predictImageData = evt.target.result;
+                    document.querySelector('#predictUploadZone span').textContent = file.name;
+                    toast('图片已加载');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById('predictBtn').addEventListener('click', async () => {
+            const model = document.getElementById('predictModel').value.trim();
+            if (!model) { toast('请输入模型路径'); return; }
+            if (!predictImageData) { toast('请先上传图片'); return; }
+
+            const btn = document.getElementById('predictBtn');
+            const status = document.getElementById('predictStatus');
+            btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 预测中...';
+            status.textContent = '下载模型 + 推理中...';
+
+            try {
+                const body = {
+                    model: model,
+                    image: predictImageData.split(',')[1],
+                    confidence_threshold: parseFloat(document.getElementById('predictConfidence').value) || 0.25,
+                };
+                const serverUrl = document.getElementById('predictServerUrl').value.trim();
+                if (serverUrl) body.server_url = serverUrl;
+
+                // Show loading in result area
+                const loading = document.getElementById('inferLoading');
+                loading.classList.add('show');
+
+                const r = await fetch(deployBase + '/v1/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.detail || '预测失败');
+
+                // Display result (reuse existing rendering)
+                currentImageData = predictImageData;
+                currentResult = data.detections || [];
+                currentTaskType = data.task_type || 'detect';
+                renderResult(currentImageData, currentResult, currentTaskType);
+
+                const jsonPanel = document.getElementById('resultJsonPanel');
+                document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+                jsonPanel.style.display = 'block';
+
+                const info = document.getElementById('resultInfo');
+                info.innerHTML = `
+                    <span>⏱ ${data.inference_time_ms || 0} ms</span>
+                    <span>|</span>
+                    <span>📦 ${data.model || model}</span>
+                    <span>|</span>
+                    <span>🎯 ${currentResult.length} 个检测</span>
+                `;
+                status.textContent = '✅ 完成';
+                toast('预测完成');
+
+                // Refresh engine list (new engine may have been loaded)
+                await refreshEngines();
+                checkHealth();
+            } catch (e) {
+                toast('❌ ' + e.message);
+                status.textContent = '❌ 失败';
+            } finally {
+                btn.disabled = false; btn.innerHTML = '<i class="fas fa-rocket"></i> 一键预测';
+                document.getElementById('inferLoading').classList.remove('show');
+            }
+        });
+
+        // ── Show/hide labels toggle ──
+        document.getElementById('showLabels').addEventListener('change', () => {
+            if (currentImageData && currentResult) renderResult(currentImageData, currentResult, currentTaskType);
+        });
+
+        // ── Init ──
+        async function init() {
+            await checkHealth();
+            await refreshEngines();
+            setInterval(() => { checkHealth(); refreshEngines(); }, 15000);
+        }
+        init();
+    </script>
+</body>
+</html>
