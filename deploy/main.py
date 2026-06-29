@@ -66,21 +66,6 @@ if os.path.isdir(static_dir):
 
 
 # Request/Response models
-class LoadModelRequest(BaseModel):
-    project_id: str
-    model_version: str
-    server_url: Optional[str] = None
-    classes: Optional[list[str]] = Field(default=None, description="Class names list")
-    task_type: Optional[str] = Field(default="detect", description="detect|segment|classify|pose")
-    local_path: Optional[str] = Field(default=None, description="Local model dir in container (skip server download)")
-
-
-class LoadWorkflowRequest(BaseModel):
-    project_id: str
-    workflow_id: str
-    server_url: Optional[str] = None
-
-
 class InferRequest(BaseModel):
     engine_id: str
     image: Optional[str] = None
@@ -122,97 +107,6 @@ async def health():
     }
 
 
-@app.post("/load/model")
-async def load_model(req: LoadModelRequest):
-    engine_id = f"{req.project_id}/{req.model_version}"
-
-    # Check if already loaded
-    existing = await engine_pool.get(engine_id)
-    if existing and existing.engine is not None:
-        return {
-            "engine_id": engine_id,
-            "type": "model",
-            "status": "already_loaded",
-            "metadata": existing.metadata,
-        }
-
-    # Use custom server URL if provided
-    client = server_client
-    if req.server_url:
-        client = ServerClient(req.server_url)
-
-    try:
-        if req.local_path:
-            model_dir = req.local_path
-        else:
-            model_dir = client.download_model(
-                req.project_id, req.model_version, CACHE_DIR
-            )
-
-        # Determine which adapter to use: prefer YOLO (.pt/.engine) over nndeploy (.onnx)
-        pt_path = os.path.join(model_dir, "best.pt")
-        engine_path = os.path.join(model_dir, "best.engine")
-        onnx_path = os.path.join(model_dir, "best.onnx")
-
-        metadata = {}
-        info_path = os.path.join(model_dir, "model_info.json")
-        if os.path.exists(info_path):
-            with open(info_path, "r", encoding="utf-8") as f:
-                metadata = json.load(f)
-
-        # Normalize metadata
-        if "task" in metadata and "task_type" not in metadata:
-            metadata["task_type"] = metadata["task"]
-        if req.classes:
-            metadata["classes"] = req.classes
-        if req.task_type:
-            metadata["task_type"] = req.task_type
-
-        if not yolo_adapter.available:
-            raise RuntimeError("YOLO adapter is not available (ultralytics not installed)")
-
-        # Prefer .engine (TensorRT) > .pt (PyTorch) > .onnx (all supported by ultralytics)
-        model_file = None
-        for candidate in [engine_path, pt_path, onnx_path]:
-            if os.path.exists(candidate):
-                model_file = candidate
-                break
-
-        if not model_file:
-            raise RuntimeError(f"No model file found in {model_dir}. "
-                               f"Looked for: best.engine, best.pt, best.onnx")
-
-        model = yolo_adapter.load_model(model_file)
-        engine_type = "yolo_model"
-        metadata["model_file"] = model_file
-        metadata["inference_backend"] = "ultralytics"
-
-        engine = Engine(
-            engine_id=engine_id,
-            engine_type=engine_type,
-            project_id=req.project_id,
-            engine=model,
-            metadata=metadata,
-        )
-        await engine_pool.add(engine)
-
-        return {
-            "engine_id": engine_id,
-            "type": engine_type,
-            "status": "loaded",
-            "metadata": metadata,
-        }
-
-    except requests.HTTPError as e:
-        if e.response.status_code == 404:
-            raise HTTPException(status_code=404, detail=f"Model not found on server: {req.project_id}/{req.model_version}")
-        raise HTTPException(status_code=502, detail=f"Failed to load model: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to load model: {str(e)}")
-
-
-# (Legacy nndeploy workflow endpoint removed — use /pipeline/load instead)
-
 
 @app.post("/infer")
 async def infer(req: InferRequest):
@@ -252,51 +146,6 @@ async def infer(req: InferRequest):
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
-
-
-class InferAnnotatedRequest(BaseModel):
-    engine_id: str
-    image: Optional[str] = None
-    image_url: Optional[str] = None
-    confidence_threshold: float = 0.25
-
-
-@app.post("/infer/annotated")
-async def infer_annotated(req: InferAnnotatedRequest):
-    """Run inference and return annotated image (supervision)."""
-    engine = await engine_pool.get(req.engine_id)
-    if not engine:
-        raise HTTPException(status_code=404, detail=f"Engine not found: {req.engine_id}")
-
-    try:
-        if req.image:
-            image_bytes = base64.b64decode(req.image)
-            image = io.BytesIO(image_bytes)
-        elif req.image_url:
-            resp = requests.get(req.image_url, timeout=30)
-            resp.raise_for_status()
-            image = io.BytesIO(resp.content)
-        else:
-            raise HTTPException(status_code=400, detail="Either image or image_url must be provided")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image data: {str(e)}")
-
-    async with engine.lock:
-        try:
-            annotated_bytes = yolo_adapter.infer_annotated(
-                engine.engine, image,
-                confidence_threshold=req.confidence_threshold,
-                task_type=engine.metadata.get("task_type", "detect"),
-                metadata=engine.metadata,
-            )
-            img_b64 = base64.b64encode(annotated_bytes).decode()
-            return {
-                "engine_id": req.engine_id,
-                "image_base64": f"data:image/jpeg;base64,{img_b64}",
-                "size_bytes": len(annotated_bytes),
-            }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Annotated inference failed: {str(e)}")
 
 
 @app.get("/engines")
