@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工作流编排 - xclabel</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<script src="/static/litegraph/litegraph.min.js"></script>
+<link rel="stylesheet" href="/static/litegraph/litegraph.css">
+<style>
+/* ── Reset & base ── */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1a2e;color:#e0e0e0}
+
+/* ── LiteGraph.Editor overrides ── */
+.litegraph.litegraph-editor{height:100%;display:flex;flex-direction:column;background:#1a1a2e;color:#e0e0e0}
+.litegraph.litegraph-editor .header{background:#16213e;border-bottom:1px solid #0f3460;padding:4px 8px;display:flex;align-items:center;min-height:40px;flex-shrink:0;gap:4px}
+.litegraph.litegraph-editor .header .tools{display:flex;align-items:center;gap:4px}
+.litegraph.litegraph-editor .header .tools-left{flex:0 0 auto}
+.litegraph.litegraph-editor .header .tools-right{flex:1;justify-content:flex-end}
+.litegraph.litegraph-editor .content{flex:1;display:flex;overflow:hidden;position:relative}
+.litegraph.litegraph-editor .footer{display:none}
+
+/* ── Buttons ── */
+.litegraph.litegraph-editor .btn{
+background:#0f3460;color:#e0e0e0;border:1px solid #533483;border-radius:4px;
+padding:5px 10px;cursor:pointer;font-size:.78em;white-space:nowrap;
+display:inline-flex;align-items:center;gap:4px;transition:all .15s;
+font-family:inherit
+}
+.litegraph.litegraph-editor .btn:hover{background:#533483;border-color:#e94560}
+.litegraph.litegraph-editor .btn-primary{background:#e94560;border-color:#e94560;color:#fff}
+.litegraph.litegraph-editor .btn-primary:hover{background:#d63850}
+.litegraph.litegraph-editor .btn-success{background:#27ae60;border-color:#27ae60;color:#fff}
+.litegraph.litegraph-editor .btn-success:hover{background:#219a52}
+.litegraph.litegraph-editor .btn-danger{background:#e67e22;border-color:#e67e22;color:#fff}
+.litegraph.litegraph-editor .btn-danger:hover{background:#d4701e}
+.litegraph.litegraph-editor .btn-outline{background:transparent;border-color:#533483}
+.litegraph.litegraph-editor .btn-outline:hover{background:#533483}
+.litegraph.litegraph-editor .btn img{display:none}
+.litegraph.litegraph-editor .headerpanel{display:none}
+.litegraph.litegraph-editor .header .tools-right .btn:first-child{margin-left:auto}
+
+/* ── Editor title ── */
+.editor-title{font-size:.85em;font-weight:600;color:#e94560;margin-right:12px;display:flex;align-items:center;gap:6px}
+.editor-title i{font-size:1em}
+
+/* ── Sidebar: node palette ── */
+.palette-sidebar{
+width:88px;background:#16213e;border-right:1px solid #0f3460;
+display:flex;flex-direction:column;padding:8px 6px;flex-shrink:0;overflow-y:auto
+}
+.palette-sidebar h4{font-size:.65em;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding:0 2px}
+.palette-item{
+background:#0f3460;border:1px solid #533483;border-radius:4px;
+padding:6px 4px;margin-bottom:6px;cursor:grab;font-size:.72em;
+text-align:center;transition:all .15s;user-select:none
+}
+.palette-item:hover{background:#533483;border-color:#e94560}
+.palette-item i{display:block;font-size:1.2em;margin-bottom:2px;color:#e94560}
+.palette-item .badge{font-size:.7em;color:#888;display:block;margin-top:1px}
+
+/* ── Sidebar: property panel ── */
+.props-sidebar{
+width:0;background:#16213e;border-left:1px solid #0f3460;
+overflow:hidden;transition:width .2s;flex-shrink:0;display:flex;flex-direction:column
+}
+.props-sidebar.open{width:270px;overflow-y:auto}
+.props-sidebar h3{padding:10px 12px;font-size:.82em;color:#e94560;border-bottom:1px solid #0f3460;flex-shrink:0;display:flex;align-items:center;gap:6px}
+.props-sidebar .field{padding:7px 12px}
+.props-sidebar label{display:block;font-size:.74em;color:#aaa;margin-bottom:2px}
+.props-sidebar input,.props-sidebar select,.props-sidebar textarea{
+width:100%;background:#0f3460;color:#e0e0e0;border:1px solid #533483;
+padding:4px 6px;border-radius:3px;font-size:.8em;font-family:inherit
+}
+.props-sidebar textarea{min-height:46px;resize:vertical}
+.props-sidebar .help{font-size:.68em;color:#777;margin-top:2px}
+.props-sidebar .no-selection{padding:20px 12px;color:#666;font-size:.8em;text-align:center}
+
+/* ── YAML panel (bottom slide-up) ── */
+.yaml-panel{
+height:0;overflow:hidden;background:#0f3460;border-top:1px solid #533483;
+transition:height .25s;flex-shrink:0;font-family:Consolas,'Courier New',monospace;font-size:.74em
+}
+.yaml-panel.open{height:200px;overflow-y:auto}
+.yaml-panel .yaml-header{padding:4px 12px;font-size:.76em;color:#e94560;border-bottom:1px solid #533483;display:flex;align-items:center;gap:6px;position:sticky;top:0;background:#0f3460}
+.yaml-panel pre{padding:8px 12px;margin:0;white-space:pre-wrap;word-break:break-all;color:#e0e0e0;line-height:1.5}
+
+/* ── LiteGraph dark theme overrides ── */
+.graph-canvas{background:#1a1a2e !important}
+.litegraph .graph-node{background:#16213e !important;border-color:#0f3460 !important;color:#e0e0e0 !important;min-width:150px;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.litegraph .graph-node-title{background:#0f3460 !important;color:#e0e0e0 !important;border-bottom:1px solid #533483 !important;height:28px;line-height:28px;padding:0 8px;font-size:.78em}
+.litegraph .graph-node .graph-node-title i{margin-right:4px;color:#e94560}
+.litegraph .graph-node.selected{border-color:#e94560 !important;box-shadow:0 0 12px rgba(233,69,96,.3)}
+.litegraph .graph-node .slot{background:#533483 !important;border:2px solid #e94560 !important;width:10px;height:10px}
+.litegraph .graph-node .slot-text{color:#ccc !important;font-size:.7em}
+.litegraph .graph-node:hover{border-color:#533483 !important}
+.litegraph .litegraph-context-menu{background:#16213e !important;border:1px solid #533483 !important;border-radius:4px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.litegraph .litegraph-context-menu-item{padding:6px 14px !important;color:#e0e0e0 !important;font-size:.78em !important;cursor:pointer}
+.litegraph .litegraph-context-menu-item:hover{background:#533483 !important}
+.litegraph .litegraph-context-menu .separator{border-color:#0f3460 !important}
+.litegraph .graph-node .graph-node-label{font-size:.7em;color:#888;padding:2px 8px}
+.litegraph .graph-node .graph-node-outputs,.litegraph .graph-node .graph-node-inputs{padding:2px 0}
+.litegraph .graph-node .graph-node-property{color:#aaa;font-size:.7em;padding:1px 8px}
+.litegraph .graph-node .graph-node-body{padding:2px 0}
+
+/* ── Modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10000;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:#16213e;border-radius:8px;padding:20px;width:90%;max-width:560px;max-height:80vh;overflow:auto;border:1px solid #533483}
+.modal-box h3{color:#e94560;margin-bottom:12px;font-size:.95em}
+.modal-box .field{margin-bottom:10px}
+.modal-box label{display:block;font-size:.76em;color:#aaa;margin-bottom:3px}
+.modal-box input[type=file]{color:#e0e0e0;font-size:.8em}
+.modal-actions{display:flex;gap:8px;margin-top:14px;align-items:center}
+.result-box{background:#0f3460;padding:10px;border-radius:4px;font-size:.76em;max-height:300px;overflow:auto;color:#e0e0e0;margin-top:10px;display:none;font-family:Consolas,'Courier New',monospace;white-space:pre-wrap;word-break:break-all}
+
+/* ── Image preview ── */
+.img-preview{display:flex;gap:12px;margin:8px 0;flex-wrap:wrap}
+.img-preview .frame{flex:1;min-width:200px;background:#0d1b2a;border:1px solid #1b3a5c;border-radius:4px;padding:6px;text-align:center}
+.img-preview .frame img{max-width:100%;max-height:200px;border-radius:3px;cursor:pointer}
+.img-preview .frame img:hover{max-height:400px;transition:max-height .2s}
+.img-preview .frame .label{font-size:.7em;color:#888;margin-top:4px}
+
+/* ── Detection table ── */
+.det-table{width:100%;border-collapse:collapse;margin:6px 0;font-size:.74em}
+.det-table th{background:#1b3a5c;color:#aaa;padding:4px 6px;text-align:left;font-weight:400}
+.det-table td{padding:3px 6px;border-bottom:1px solid rgba(255,255,255,0.05)}
+.det-table tr:hover td{background:rgba(255,255,255,0.03)}
+
+/* ── Debug log panel ── */
+.debug-log{background:#0d1b2a;padding:8px 10px;border-radius:4px;font-size:.76em;max-height:300px;overflow:auto;color:#e0e0e0;margin-top:10px;display:block;font-family:Consolas,'Courier New',monospace;line-height:1.6;border:1px solid #1b3a5c}
+.debug-log .log-line{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+.debug-log .log-line:last-child{border-bottom:none}
+.debug-log .log-time{color:#6a9fb5;margin-right:6px}
+.debug-log .log-ok{color:#4caf50}
+.debug-log .log-error{color:#ff6b6b}
+.debug-log .log-warn{color:#ffa726}
+.debug-log .log-info{color:#6a9fb5}
+.debug-log .log-running{color:#ffa726}
+.debug-log .log-node{color:#ce93d8}
+.debug-log .log-placeholder{color:#555;text-align:center;padding:20px 0}
+
+/* ── Workflow list dropdown ── */
+.wf-dropdown{position:absolute;top:42px;right:10px;background:#16213e;border:1px solid #0f3460;border-radius:4px;display:none;z-index:9999;min-width:200px;max-height:320px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.wf-dropdown.open{display:block}
+.wf-dropdown .item{padding:7px 14px;cursor:pointer;font-size:.8em;border-bottom:1px solid #0f3460;display:flex;justify-content:space-between;align-items:center}
+.wf-dropdown .item:hover{background:#0f3460}
+.wf-dropdown .item .del{color:#e94560;cursor:pointer;font-size:1.1em;line-height:1;padding:0 2px}
+.wf-dropdown .item .del:hover{color:#ff6b6b}
+.wf-dropdown .empty{padding:14px;color:#666;font-size:.8em;text-align:center}
+
+/* ── Toast ── */
+.toast{position:fixed;top:14px;right:14px;background:#333;color:#fff;padding:8px 18px;border-radius:4px;display:none;z-index:99999;font-size:.8em;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+
+/* ── Loading spinner ── */
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid #888;border-top-color:#e94560;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:4px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Live mode badge ── */
+.editor-area{position:relative;flex:1;min-width:0}
+
+/* ── Props sidebar tabs ── */
+.props-tabs{display:flex;border-bottom:1px solid #0f3460;flex-shrink:0}
+.props-tab{padding:8px 14px;font-size:.76em;cursor:pointer;color:#888;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:4px}
+.props-tab:hover{color:#e0e0e0}
+.props-tab.active{color:#e94560;border-bottom-color:#e94560}
+
+/* ── Result panel ── */
+.result-panel{display:none;flex:1;overflow-y:auto;padding:0}
+.result-panel.open{display:block}
+.result-empty{padding:20px 12px;color:#666;font-size:.8em;text-align:center}
+.result-summary{padding:8px 12px;background:#0d1b2a;border-bottom:1px solid #0f3460;font-size:.74em;display:flex;gap:16px;flex-wrap:wrap}
+.result-summary .stat{display:flex;align-items:center;gap:4px}
+.result-summary .stat .val{color:#e0e0e0;font-weight:600}
+.result-summary .stat .lbl{color:#888}
+.result-node{padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background .1s;font-size:.76em}
+.result-node:hover{background:rgba(233,69,96,0.08)}
+.result-node .node-header{display:flex;align-items:center;gap:6px}
+.result-node .node-status-icon{width:16px;text-align:center}
+.result-node .node-title{color:#e0e0e0;font-weight:500;flex:1}
+.result-node .node-time{color:#888;font-size:.9em}
+.result-node .node-detail{margin-top:4px;margin-left:22px;padding:4px 8px;background:#0d1b2a;border-radius:3px;display:none;font-size:.95em}
+.result-node .node-detail.open{display:block}
+.result-node .node-detail img{max-width:100%;max-height:180px;border-radius:3px;margin:4px 0;cursor:pointer}
+.result-node .node-detail .det-row{padding:1px 0;color:#aaa}
+.result-node .node-detail .det-row .cls{color:#4caf50}
+.result-node .node-detail .det-row .conf{color:#ffa726}
+</style>
+</head>
+<body>
+
+<div id="editor-container" style="height:100vh;width:100vw"></div>
+
+<!-- Workflow list dropdown -->
+<div class="wf-dropdown" id="wfDropdown"></div>
+
+<!-- Status toast -->
+<div id="toast" class="toast"></div>
+
+<!-- Run modal -->
+<div class="modal-overlay" id="runModal">
+<div class="modal-box">
+<h3><i class="fas fa-bug" style="margin-right:6px"></i>运行调试</h3>
+<div id="runInputSection">
+<div class="field" id="runFileField"><label>选择图片</label><input type="file" id="runImageInput" accept="image/*" onchange="handleRunImage(this)">
+<div style="font-size:.76em;color:#888;margin-top:4px" id="runImageName">未选择</div></div>
+<div class="field" id="runUrlField" style="display:none"><label>图片/视频流 URL</label><input type="text" id="runUrlInput" placeholder="https://example.com/image.jpg" style="width:100%;background:#0f3460;color:#e0e0e0;border:1px solid #533483;padding:5px 7px;border-radius:3px;font-size:.82em">
+<div style="font-size:.74em;color:#888;margin-top:3px">支持 HTTP/HTTPS/RTSP 流</div></div>
+</div>
+<div class="modal-actions">
+<button class="btn btn-primary" onclick="executeWorkflow()"><i class="fas fa-play"></i> 执行</button>
+<button class="btn btn-outline" onclick="closeRunModal()">取消</button>
+<span id="runStatus" style="font-size:.8em;color:#888;margin-left:8px"></span>
+</div>
+<div class="debug-log" id="runLog"><div class="log-placeholder">点击「执行」查看调试日志</div></div>
+<div class="img-preview" id="imgPreview" style="display:none">
+<div class="frame" id="inputFrame"><img id="inputImg"><div class="label">📥 输入图片</div></div>
+<div class="frame" id="outputFrame"><img id="outputImg"><div class="label">🎯 检测结果</div></div>
+</div>
+	<div class="result-box" id="runResult"></div>
+</div>
+</div>
+
+<script>
+// ── Globals ──
+var graph, graphcanvas, selectedNode = null;
+var runImageData = null;
+
+// ── Custom Node Types ──
+
+// YOLO Node
+function YoloNode(){
+this.properties = {
+model: '',
+task: 'segment',
+conf: 0.25,
+iou: 0.5
+};
+this.addOutput('detections', 'array');
+this.addWidget('combo', 'task', this.properties.task, function(v){ this.properties.task = v; }, { values: ['detect', 'segment', 'pose'] });
+this.addWidget('slider', 'conf', this.properties.conf, function(v){ this.properties.conf = v; }, { min: 0, max: 1, step: 0.05 });
+this.addWidget('slider', 'iou', this.properties.iou, function(v){ this.properties.iou = v; }, { min: 0, max: 1, step: 0.05 });
+this.serialize_widgets = true;
+this.size = this.computeSize();
+}
+YoloNode.title = 'YOLO';
+YoloNode.desc = 'Ultralytics YOLO 检测/分割/姿态';
+YoloNode.prototype.onNodeSelected = function(){ showProperties(this); };
+YoloNode.prototype.onDeselected = function(){ hideProperties(); };
+
+// Condition Node
+function ConditionNode(){
+this.properties = {
+expression: 'max_conf > 0.3 and max_conf < 0.7'
+};
+this.addInput('in', 'array');
+this.addOutput('result', 'boolean');
+this.size = this.computeSize();
+}
+ConditionNode.title = 'Condition';
+ConditionNode.desc = '条件分支';
+ConditionNode.prototype.onNodeSelected = function(){ showProperties(this); };
+ConditionNode.prototype.onDeselected = function(){ hideProperties(); };
+
+// VLLM Node
+function VllmNode(){
+this.properties = {
+api_url: 'http://localhost:8000/v1',
+model_name: 'qwen-vl-chat',
+prompt: '分析图片中的目标区域',
+condition: '',
+extract_roi: true,
+temperature: 0.1,
+max_tokens: 256
+};
+this.addInput('trigger', 'boolean');
+this.addOutput('result', 'string');
+this.size = this.computeSize();
+}
+VllmNode.title = 'VLLM';
+VllmNode.desc = '大模型分析';
+VllmNode.prototype.onNodeSelected = function(){ showProperties(this); };
+VllmNode.prototype.onDeselected = function(){ hideProperties(); };
+
+// Output Node
+function OutputNode(){
+this.properties = {};
+this.addInput('in', 'any');
+this.size = this.computeSize();
+}
+OutputNode.title = 'Output';
+OutputNode.desc = '输出合并';
+OutputNode.prototype.onNodeSelected = function(){ showProperties(this); };
+OutputNode.prototype.onDeselected = function(){ hideProperties(); };
+
+// ── Input Node ──
+function InputNode(){
+this.properties = {
+input_type: 'upload',
+url: '',
+};
+this.addOutput('image', 'image');
+this.addWidget('combo', 'type', this.properties.input_type, function(v){ this.properties.input_type = v; }, { values: ['upload', 'url', 'stream'] });
+this.serialize_widgets = true;
+this.size = this.computeSize();
+}
+InputNode.title = 'Input';
+InputNode.desc = '数据输入（上传 / URL / 视频流）';
+InputNode.prototype.onNodeSelected = function(){ showProperties(this); };
+InputNode.prototype.onDeselected = function(){ hideProperties(); };
+
+// ── Register custom nodes (with category for context menu) ──
+LiteGraph.registerNodeType('xclabel/input', InputNode);
+LiteGraph.registerNodeType('xclabel/yolo', YoloNode);
+LiteGraph.registerNodeType('xclabel/condition', ConditionNode);
+LiteGraph.registerNodeType('xclabel/vllm', VllmNode);
+LiteGraph.registerNodeType('xclabel/output', OutputNode);
+
+// Also register without prefix for backward compat
+LiteGraph.registerNodeType('input', InputNode);
+LiteGraph.registerNodeType('yolo', YoloNode);
+LiteGraph.registerNodeType('condition', ConditionNode);
+LiteGraph.registerNodeType('vllm', VllmNode);
+LiteGraph.registerNodeType('output', OutputNode);
+
+// ── Initialize Editor (following official LiteGraph.Editor pattern) ──
+function initEditor(){
+var container = document.getElementById('editor-container');
+
+// Build DOM structure (same pattern as LiteGraph.Editor constructor)
+container.innerHTML =
+'<div class="litegraph litegraph-editor">' +
+'<div class="header"><div class="tools tools-left"></div><div class="tools tools-right"></div></div>' +
+'<div class="content"><div class="editor-area"><canvas class="graphcanvas" width="1000" height="500" tabindex="10"></canvas></div></div>' +
+'<div class="footer" style="display:none"></div>' +
+'</div>';
+
+var root = container.querySelector('.litegraph-editor');
+var canvasEl = root.querySelector('.graphcanvas');
+
+// Create graph and canvas
+graph = new LGraph();
+graphcanvas = new LGraphCanvas(canvasEl, graph);
+graphcanvas.live_mode = false;
+
+// Node selection handling
+graphcanvas.onNodeMousedown = function(e, node, slot, event){
+showProperties(node);
+scrollToResultNode(node.id);
+};
+graphcanvas.onNodeDblClick = function(e, node){
+showProperties(node);
+scrollToResultNode(node.id);
+};
+
+// File drop handling (same as LiteGraph.Editor)
+graphcanvas.onDropItem = function(e){
+for(var i=0;i<e.dataTransfer.files.length;i++){
+var file=e.dataTransfer.files[i];
+if(file.name.split('.').pop().toLowerCase()==='json'){
+var reader=new FileReader();
+reader.onload=function(ev){
+try{
+graph.configure(JSON.parse(ev.target.result));
+graph.setDirtyCanvas(true);
+updateYamlPreview();
+setStatus('已加载文件','#4caf50');
+toast('已加载');
+}catch(err){toast('JSON解析失败');}
+};
+reader.readAsText(file);
+}
+}
+};
+
+graph.onAfterChange = function(){ updateYamlPreview(); };
+
+graph.start();
+
+// ── Toolbar setup ──
+var toolsLeft = root.querySelector('.tools-left');
+var toolsRight = root.querySelector('.tools-right');
+
+// Editor title
+var title = document.createElement('span');
+title.className = 'editor-title';
+title.innerHTML = '<i class="fas fa-project-diagram"></i> 工作流';
+toolsLeft.appendChild(title);
+
+// Status display
+var statusEl = document.createElement('span');
+statusEl.id = 'wfStatus';
+statusEl.style.cssText = 'font-size:.76em;color:#888;margin-left:12px;min-width:80px';
+statusEl.textContent = '就绪';
+toolsLeft.appendChild(statusEl);
+
+// Button factory
+function addBtn(html, cls, titleText, cb){
+var b = document.createElement('button');
+b.className = 'btn ' + cls;
+b.innerHTML = html;
+b.title = titleText || '';
+b.addEventListener('click', cb);
+toolsRight.appendChild(b);
+return b;
+}
+
+// Workflow name input
+var nameInput = document.createElement('input');
+nameInput.type = 'text';
+nameInput.id = 'wfName';
+nameInput.placeholder = 'workflow_name';
+nameInput.value = 'my_pipeline';
+nameInput.style.cssText = 'background:#0f3460;color:#e0e0e0;border:1px solid #533483;border-radius:3px;padding:4px 8px;font-size:.78em;width:130px;font-family:inherit';
+toolsRight.appendChild(nameInput);
+
+addBtn('<i class="fas fa-plus"></i> 新建', 'btn-outline', '新建工作流', onNew);
+addBtn('<i class="fas fa-folder-open"></i> 打开', 'btn-outline', '打开工作流', onOpen);
+addBtn('<i class="fas fa-save"></i> 保存', 'btn-success', '保存工作流', onSave);
+addBtn('<i class="fas fa-rocket"></i> 部署', 'btn-danger', '部署到推理服务', onDeploy);
+addBtn('<i class="fas fa-stop"></i> 卸载', 'btn-outline', '卸载工作流', onUndeploy);
+addBtn('<i class="fas fa-bug"></i> 运行调试', 'btn-primary', '运行调试', onRun);
+addBtn('<i class="fas fa-code"></i> YAML', 'btn-outline', 'YAML 预览', toggleYaml);
+
+// ── Inject left sidebar (node palette) ──
+var content = root.querySelector('.content');
+var palette = document.createElement('div');
+palette.className = 'palette-sidebar';
+palette.innerHTML =
+'<h4>节点</h4>' +
+'<div class="palette-item" data-type="xclabel/input" draggable="true"><i class="fas fa-cloud-upload-alt"></i>Input<span class="badge">上传/URL/流</span></div>' +
+'<div class="palette-item" data-type="xclabel/yolo" draggable="true"><i class="fas fa-eye"></i>YOLO<span class="badge">检测/分割</span></div>' +
+'<div class="palette-item" data-type="xclabel/condition" draggable="true"><i class="fas fa-code-branch"></i>条件<span class="badge">分支</span></div>' +
+'<div class="palette-item" data-type="xclabel/vllm" draggable="true"><i class="fas fa-brain"></i>VLLM<span class="badge">分析</span></div>' +
+'<div class="palette-item" data-type="xclabel/output" draggable="true"><i class="fas fa-file-export"></i>输出<span class="badge">合并</span></div>';
+content.insertBefore(palette, content.firstChild);
+
+// ── Inject right sidebar (property panel with result panel tab) ──
+var propsPanel = document.createElement('div');
+propsPanel.className = 'props-sidebar';
+propsPanel.id = 'propsSidebar';
+
+// Tab bar
+var tabBar = document.createElement('div');
+tabBar.className = 'props-tabs';
+tabBar.innerHTML =
+  '<div class="props-tab active" data-tab="props" onclick="switchPropsTab(\'props\')"><i class="fas fa-sliders-h"></i> 属性</div>' +
+  '<div class="props-tab" data-tab="result" onclick="switchPropsTab(\'result\')"><i class="fas fa-chart-bar"></i> 运行结果</div>';
+propsPanel.appendChild(tabBar);
+
+// Properties content
+var propsContent = document.createElement('div');
+propsContent.id = 'propsContent';
+propsContent.innerHTML = '<div class="no-selection">点击节点编辑属性</div>';
+propsPanel.appendChild(propsContent);
+
+// Result panel (hidden by default)
+var resultPanel = document.createElement('div');
+resultPanel.className = 'result-panel';
+resultPanel.id = 'resultPanel';
+resultPanel.innerHTML = '<div class="result-empty">尚未执行工作流</div>';
+propsPanel.appendChild(resultPanel);
+
+content.appendChild(propsPanel);
+
+// ── Inject YAML panel (at bottom, before footer) ──
+var yamlPanel = document.createElement('div');
+yamlPanel.className = 'yaml-panel';
+yamlPanel.id = 'yamlPanel';
+yamlPanel.innerHTML = '<div class="yaml-header"><i class="fas fa-code"></i> YAML 预览 <span style="margin-left:auto;font-size:.8em;color:#888;cursor:pointer" onclick="toggleYaml()">✕</span></div><pre id="yamlContent">暂无节点</pre>';
+root.insertBefore(yamlPanel, root.querySelector('.footer'));
+
+// ── Drag-and-drop from palette ──
+var editorArea = root.querySelector('.editor-area');
+palette.querySelectorAll('.palette-item').forEach(function(el){
+el.addEventListener('dragstart', function(e){
+e.dataTransfer.setData('text/plain', el.dataset.type);
+});
+});
+editorArea.addEventListener('dragover', function(e){ e.preventDefault(); });
+editorArea.addEventListener('drop', function(e){
+e.preventDefault();
+var type = e.dataTransfer.getData('text/plain');
+if(!type) return;
+var node = LiteGraph.createNode(type);
+if(node){
+var cr = editorArea.getBoundingClientRect();
+var scale = graphcanvas.scale || 1;
+var offset = graphcanvas.offset || [0, 0];
+node.pos = [
+(e.clientX - cr.left) / scale - offset[0] - 60,
+(e.clientY - cr.top) / scale - offset[1] - 20
+];
+graph.add(node);
+graph.setDirtyCanvas(true);
+setStatus('已添加: ' + (node.title || type), '#4fc3f7');
+}
+});
+
+graphcanvas.resize();
+}
+
+// ── Property Panel ──
+function showProperties(node){
+if(!node) return;
+selectedNode = node;
+var panel = document.getElementById('propsSidebar');
+var title = document.getElementById('propsTitle');
+var content = document.getElementById('propsContent');
+panel.classList.add('open');
+title.innerHTML = '<i class="fas fa-sliders-h"></i> ' + (node.title || '节点');
+
+var p = node.properties || {};
+var html = '';
+var type = node.type;
+
+if(type === 'xclabel/input' || type === 'input'){
+html += '<div class="field"><label>input_type</label><select onchange="setProp(\'input_type\',this.value)">' +
+['upload','url','stream'].map(function(t){ return '<option value="'+t+'"'+(p.input_type===t?' selected':'')+'>'+
+(t==='upload'?'上传图片':t==='url'?'在线图片/视频流':'视频流')+'</option>'; }).join('') + '</select></div>';
+if(p.input_type === 'url' || p.input_type === 'stream'){
+html += fieldHtml('text', 'url', p.url || '', 'https://...');
+html += '<div class="help" style="padding:0 12px;margin:-4px 0 6px">支持 HTTP/HTTPS/RTSP</div>';
+} else {
+html += '<div class="help" style="padding:4px 12px">运行时选择本地图片上传</div>';
+}
+}
+else if(type === 'xclabel/yolo' || type === 'yolo'){
+html += fieldHtml('model', 'model', p.model || '', 'sv30_seg/...');
+html += '<div class="field"><label>task</label><select onchange="setProp(\'task\',this.value)">' +
+['detect','segment','pose'].map(function(t){ return '<option value="'+t+'"'+(p.task===t?' selected':'')+'>'+t+'</option>'; }).join('') + '</select></div>';
+html += fieldHtml('number', 'conf', p.conf ?? 0.25, '', '0.05', '0', '1');
+html += fieldHtml('number', 'iou', p.iou ?? 0.5, '', '0.05', '0', '1');
+}
+else if(type === 'xclabel/condition' || type === 'condition'){
+html += fieldHtml('text', 'expression', p.expression || 'max_conf > 0.5', 'max_conf, detection_count');
+}
+else if(type === 'xclabel/vllm' || type === 'vllm'){
+html += fieldHtml('text', 'api_url', p.api_url || 'http://localhost:8000/v1');
+html += fieldHtml('text', 'model_name', p.model_name || 'qwen-vl-chat');
+html += '<div class="field"><label>prompt</label><textarea onchange="setProp(\'prompt\',this.value)">'+(p.prompt||'')+'</textarea></div>';
+html += fieldHtml('text', 'condition', p.condition || '', '条件节点 ID');
+html += '<div class="field"><label><input type="checkbox" '+(p.extract_roi?'checked':'')+' onchange="setProp(\'extract_roi\',this.checked)"> 裁剪ROI</label></div>';
+html += fieldHtml('number', 'temperature', p.temperature ?? 0.1, '', '0.05', '0', '1');
+html += fieldHtml('number', 'max_tokens', p.max_tokens ?? 256, '', '1', '1');
+}
+else if(type === 'xclabel/output' || type === 'output'){
+html += '<div class="field"><div class="help" style="color:#888">自动合并上游节点输出。<br>连线到 Output 节点的数据都会被汇总。</div></div>';
+}
+
+content.innerHTML = html;
+}
+
+function fieldHtml(inputType, key, value, placeholder, step, min, max){
+var attrs = 'onchange="setProp(\''+key+'\',this.value)"';
+if(placeholder) attrs += ' placeholder="'+placeholder+'"';
+if(inputType === 'number'){
+attrs += ' type="number"';
+if(step) attrs += ' step="'+step+'"';
+if(min) attrs += ' min="'+min+'"';
+if(max) attrs += ' max="'+max+'"';
+}
+return '<div class="field"><label>'+key+'</label><input '+attrs+' value="'+String(value ?? '').replace(/"/g,'&quot;')+'"></div>';
+}
+
+function hideProperties(){
+document.getElementById('propsSidebar').classList.remove('open');
+selectedNode = null;
+}
+
+// ── Result panel / Props tab switching ──
+var lastRunResult = null;
+
+function switchPropsTab(tab){
+  document.querySelectorAll('.props-tab').forEach(function(t){
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  document.getElementById('propsContent').style.display = (tab === 'props') ? 'block' : 'none';
+  document.getElementById('resultPanel').classList.toggle('open', tab === 'result');
+  document.getElementById('propsSidebar').classList.add('open');
+  if(tab === 'result' && lastRunResult){
+    renderResultPanel(lastRunResult);
+  }
+}
+
+function renderResultPanel(data){
+  var panel = document.getElementById('resultPanel');
+  if(!data || !panel) return;
+
+  var nodeOutputs = data.node_outputs || {};
+  var nodeTimings = data.node_timings || {};
+  var nodeStatus = data.node_status || {};
+  var errors = data.errors || [];
+  var totalMs = data.execution_time_ms || 0;
+  var mode = data.mode || 'unknown';
+
+  var graphInfo = {};
+  if(graph && graph._nodes){
+    graph._nodes.forEach(function(n){
+      graphInfo[n.id] = {title: n.title || n.type, type: n.type.replace('xclabel/', '')};
+    });
+  }
+
+  var modeLabels = {'local_engine':'本地引擎', 'remote_deploy':'远程 Deploy'};
+  var statusEmoji = errors.length ? '❌' : '✅';
+  var summaryHtml =
+    '<div class="result-summary">' +
+    '<div class="stat"><span class="val">'+statusEmoji+'</span><span class="lbl">状态</span></div>' +
+    '<div class="stat"><span class="val">'+totalMs+'ms</span><span class="lbl">总耗时</span></div>' +
+    '<div class="stat"><span class="val">'+(modeLabels[mode]||mode)+'</span><span class="lbl">执行模式</span></div>' +
+    '<div class="stat"><span class="val">'+Object.keys(nodeOutputs).length+'</span><span class="lbl">节点数</span></div>';
+  if(errors.length){
+    summaryHtml += '<div class="stat"><span class="val" style="color:#ff6b6b">'+errors.length+'</span><span class="lbl">错误</span></div>';
+  }
+  summaryHtml += '</div>';
+
+  var nodeHtml = '';
+  Object.keys(nodeOutputs).sort().forEach(function(nid){
+    var info = graphInfo[nid] || {};
+    var ntype = info.type || 'unknown';
+    var ntitle = info.title || nid;
+    var out = nodeOutputs[nid] || {};
+    var timing = nodeTimings[nid] || '';
+    var status = nodeStatus[nid] || 'ok';
+    var timingStr = timing ? Math.round(timing)+'ms' : '';
+
+    var statusIcon = status === 'ok' ? '✅' : status === 'error' ? '❌' : '⏭';
+    var statusColor = status === 'ok' ? '#4caf50' : status === 'error' ? '#ff6b6b' : '#ffa726';
+
+    var typeIcons = {input:'fa-cloud-upload-alt', yolo:'fa-eye', condition:'fa-code-branch', vllm:'fa-brain', output:'fa-file-export'};
+    var typeIcon = typeIcons[ntype] || 'fa-circle';
+
+    var detailHtml = '';
+    if(ntype === 'yolo' && out.annotated_image){
+      detailHtml += '<img src="data:image/jpeg;base64,'+out.annotated_image+'" onclick="this.style.maxHeight=this.style.maxHeight?\'\':\'none\'" title="点击缩放">';
+    }
+    if(out.detections && out.detections.length){
+      detailHtml += '<div style="color:#888;margin:4px 0">检测到 <b style="color:#e0e0e0">'+out.detections.length+'</b> 个目标</div>';
+      out.detections.slice(0, 10).forEach(function(d){
+        detailHtml += '<div class="det-row"><span class="cls">'+d.class_name+'</span> <span class="conf">'+(d.confidence?d.confidence.toFixed(3):'')+'</span></div>';
+      });
+      if(out.detections.length > 10){
+        detailHtml += '<div style="color:#888">... 还有 '+(out.detections.length-10)+' 个</div>';
+      }
+    }
+    if(ntype === 'yolo' && out.max_conf !== undefined){
+      detailHtml += '<div style="color:#888;margin-top:2px">最高置信度: <b style="color:#ffa726">'+out.max_conf.toFixed(3)+'</b></div>';
+    }
+    if(ntype === 'condition'){
+      detailHtml += '<div style="color:#888">表达式: <code style="color:#ce93d8">'+(out.expression || '')+'</code></div>';
+      if(out.evaluated !== undefined){
+        detailHtml += '<div style="color:#888">结果: <b style="color:'+(out.evaluated?'#4caf50':'#ff6b6b')+'">'+out.evaluated+'</b></div>';
+      }
+    }
+    if(ntype === 'vllm' && out.vllm_result){
+      var txt = out.vllm_result;
+      detailHtml += '<div style="color:#e0e0e0;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow:hidden">'+(txt.length>200?txt.slice(0,200)+'...':txt)+'</div>';
+      if(txt.length > 200){
+        detailHtml += '<div style="color:#6a9fb5;cursor:pointer;margin-top:2px" onclick="this.previousElementSibling.style.maxHeight=\'none\';this.style.display=\'none\'">展开全文 ▾</div>';
+      }
+    }
+    if(ntype === 'output'){
+      detailHtml += '<div style="color:#888">合并上游节点输出</div>';
+    }
+
+    nodeHtml +=
+      '<div class="result-node" data-node-id="'+nid+'" onclick="onResultNodeClick(this,\''+nid+'\')">' +
+      '<div class="node-header">' +
+      '<span class="node-status-icon">'+statusIcon+'</span>' +
+      '<i class="fas '+typeIcon+'" style="color:#e94560;width:14px;text-align:center"></i>' +
+      '<span class="node-title">'+ntitle+'</span>' +
+      '<span class="node-time" style="color:'+statusColor+'">'+timingStr+'</span>' +
+      '</div>' +
+      '<div class="node-detail" id="detail-'+nid+'">'+detailHtml+'</div>' +
+      '</div>';
+  });
+
+  if(!nodeHtml){
+    nodeHtml = '<div class="result-empty">无节点输出</div>';
+  }
+
+  panel.innerHTML = summaryHtml + nodeHtml;
+}
+
+function onResultNodeClick(el, nid){
+  var detail = document.getElementById('detail-'+nid);
+  if(detail) detail.classList.toggle('open');
+  if(graph && graph._nodes){
+    for(var i=0; i<graph._nodes.length; i++){
+      var n = graph._nodes[i];
+      if(String(n.id) === String(nid)){
+        graphcanvas.selectNode(n);
+        break;
+      }
+    }
+  }
+}
+
+function scrollToResultNode(nid){
+  var panel = document.getElementById('resultPanel');
+  if(!panel || !panel.classList.contains('open')) return;
+  var row = panel.querySelector('.result-node[data-node-id="'+nid+'"]');
+  if(row){
+    row.scrollIntoView({behavior:'smooth', block:'nearest'});
+    row.style.background = 'rgba(233,69,96,0.2)';
+    setTimeout(function(){ row.style.background = ''; }, 1000);
+  }
+}
+
+function setProp(key, value){
+if(!selectedNode) return;
+var p = selectedNode.properties;
+// Parse number fields
+if(typeof p[key] === 'number'){
+p[key] = parseFloat(value) || 0;
+} else if(typeof p[key] === 'boolean'){
+p[key] = value === true || value === 'true';
+} else {
+p[key] = value;
+}
+graph.setDirtyCanvas(true);
+setStatus('已修改: ' + key, '#ffa726');
+updateYamlPreview();
+}
+
+// ── YAML Preview ──
+var yamlVisible = false;
+
+function toggleYaml(){
+yamlVisible = !yamlVisible;
+var el = document.getElementById('yamlPanel');
+el.classList.toggle('open');
+if(yamlVisible) updateYamlPreview();
+}
+
+function updateYamlPreview(){
+if(!yamlVisible) return;
+var nodes = graph._nodes || [];
+if(!nodes.length){
+document.getElementById('yamlContent').textContent = '暂无节点';
+return;
+}
+var links = [];
+if(graph._links && graph._links.forEach){
+graph._links.forEach(function(l){ links.push({from:l.origin_id, to:l.target_id}); });
+}
+
+var name = (document.getElementById('wfName') || {}).value || 'untitled';
+var y = 'version: "1.0"\nname: ' + name + '\npipeline:\n';
+nodes.forEach(function(n){
+var p = n.properties;
+y += '  - id: ' + n.id + '\n    type: ' + n.type.replace('xclabel/', '') + '\n';
+var t = n.type.replace('xclabel/', '');
+if(t === 'input'){
+y += '    input_type: ' + (p.input_type || 'upload') + '\n';
+if(p.url) y += '    url: "' + p.url + '"\n';
+}
+else if(t === 'yolo'){
+if(p.model) y += '    model: "' + p.model + '"\n';
+y += '    task: ' + (p.task || 'detect') + '\n    params:\n      conf: ' + (p.conf || 0.25) + '\n      iou: ' + (p.iou || 0.5) + '\n';
+}
+else if(t === 'condition'){
+y += '    expression: "' + (p.expression || 'max_conf > 0.5') + '"\n';
+}
+else if(t === 'vllm'){
+y += '    api_url: "' + (p.api_url || '') + '"\n    model_name: "' + (p.model_name || '') + '"\n    prompt: "' + (p.prompt || '').replace(/\n/g,'\\n') + '"\n';
+if(p.condition) y += '    condition: "' + p.condition + '"\n';
+y += '    extract_roi: ' + (!!p.extract_roi) + '\n    params:\n      temperature: ' + (p.temperature || 0.1) + '\n      max_tokens: ' + (p.max_tokens || 256) + '\n';
+}
+else if(t === 'output'){
+var src = links.filter(function(l){ return l.to === n.id; }).map(function(l){ return l.from; });
+if(src.length) y += '    source: [' + src.join(', ') + ']\n';
+}
+});
+document.getElementById('yamlContent').textContent = y;
+}
+
+// ── Status ──
+function setStatus(msg, color){
+var el = document.getElementById('wfStatus');
+if(el){
+el.textContent = msg;
+el.style.color = color || '#888';
+}
+}
+
+function toast(msg, duration){
+var t = document.getElementById('toast');
+t.textContent = msg;
+t.style.display = 'block';
+clearTimeout(t._t);
+t._t = setTimeout(function(){ t.style.display = 'none'; }, duration || 2000);
+}
+
+// ── File helpers ──
+function getWfName(){
+var el = document.getElementById('wfName');
+return (el ? el.value.trim() : '') || 'untitled';
+}
+
+// ── New ──
+function onNew(){
+if(!confirm('清空画布？')) return;
+graph.clear();
+document.getElementById('wfName').value = 'my_pipeline';
+hideProperties();
+document.getElementById('yamlContent').textContent = '暂无节点';
+setStatus('新工作流', '#4fc3f7');
+}
+
+// ── Save ──
+function onSave(){
+var name = getWfName();
+var serialized = graph.serialize();
+setStatus('保存中...', '#ffa726');
+
+fetch('/api/wf/save', {
+method: 'POST',
+headers: {'Content-Type':'application/json'},
+body: JSON.stringify({name: name, graph: serialized})
+})
+.then(function(r){ return r.json(); })
+.then(function(data){
+if(data.success){
+setStatus('已保存: ' + data.name, '#4caf50');
+toast('保存成功');
+} else {
+setStatus('保存失败', '#ff6b6b');
+toast('保存失败: ' + (data.error || ''));
+}
+})
+.catch(function(e){
+setStatus('保存异常', '#ff6b6b');
+toast('保存异常');
+console.error(e);
+});
+}
+
+// ── Open (list + load) ──
+function onOpen(){
+var dd = document.getElementById('wfDropdown');
+if(dd.classList.contains('open')){
+dd.classList.remove('open');
+return;
+}
+
+fetch('/api/wf/list')
+.then(function(r){ return r.json(); })
+.then(function(data){
+var wfs = data.workflows || [];
+if(!wfs.length){
+dd.innerHTML = '<div class="empty">暂无工作流</div>';
+} else {
+dd.innerHTML = wfs.map(function(w){
+return '<div class="item" data-name="'+w.name+'">' +
+'<span class="wf-name">'+w.name+' <span style="color:#888;font-size:.85em">('+w.nodes+'节点)</span></span>' +
+'<span class="del" data-name="'+w.name+'">&times;</span></div>';
+}).join('');
+// Click to load
+dd.querySelectorAll('.wf-name').forEach(function(el){
+el.addEventListener('click', function(){
+var name = el.parentElement.dataset.name;
+loadWorkflow(name);
+dd.classList.remove('open');
+});
+});
+// Click to delete (with stop propagation)
+dd.querySelectorAll('.del').forEach(function(el){
+el.addEventListener('click', function(e){
+e.stopPropagation();
+var name = el.dataset.name;
+if(confirm('删除 "'+name+'"？')){
+deleteWorkflow(name);
+}
+});
+});
+}
+dd.classList.add('open');
+})
+.catch(function(){
+toast('加载工作流列表失败');
+});
+}
+
+function loadWorkflow(name){
+setStatus('加载中...', '#ffa726');
+fetch('/api/wf/get?name='+encodeURIComponent(name))
+.then(function(r){ return r.json(); })
+.then(function(data){
+if(data.content){
+graph.configure(data.content);
+graph.setDirtyCanvas(true);
+document.getElementById('wfName').value = name;
+updateYamlPreview();
+setStatus('已加载: ' + name, '#4caf50');
+toast('已加载');
+}
+})
+.catch(function(e){
+setStatus('加载失败', '#ff6b6b');
+toast('加载失败');
+});
+}
+
+function deleteWorkflow(name){
+fetch('/api/wf/delete', {
+method: 'POST',
+headers: {'Content-Type':'application/json'},
+body: JSON.stringify({name: name})
+})
+.then(function(r){ return r.json(); })
+.then(function(data){
+if(data.success){
+toast('已删除');
+onOpen(); // refresh list
+} else {
+toast('删除失败');
+}
+})
+.catch(function(){ toast('删除异常'); });
+}
+
+// ── Deploy / Undeploy ──
+function onDeploy(){
+var name = getWfName();
+if(!name){ toast('请输入工作流名称'); return; }
+setStatus('部署中...', '#ffa726');
+
+fetch('/api/wf/deploy', {
+method: 'POST',
+headers: {'Content-Type':'application/json'},
+body: JSON.stringify({name: name})
+})
+.then(function(r){ return r.json(); })
+.then(function(data){
+if(data.status === 'loaded'){
+setStatus('已部署: ' + name, '#4caf50');
+toast('部署成功');
+} else {
+setStatus('部署失败', '#ff6b6b');
+toast('部署失败: ' + JSON.stringify(data));
+}
+})
+.catch(function(e){
+setStatus('部署异常', '#ff6b6b');
+toast('部署异常');
+});
+}
+
+function onUndeploy(){
+var name = getWfName();
+if(!name){ toast('请输入工作流名称'); return; }
+if(!confirm('卸载 "'+name+'" 从推理服务？')) return;
+setStatus('卸载中...', '#ffa726');
+
+fetch('/api/wf/undeploy', {
+method: 'POST',
+headers: {'Content-Type':'application/json'},
+body: JSON.stringify({name: name})
+})
+.then(function(r){ return r.json(); })
+.then(function(data){
+if(data.status === 'unloaded'){
+setStatus('已卸载: ' + name, '#4caf50');
+toast('卸载成功');
+} else {
+setStatus('卸载失败', '#ff6b6b');
+}
+})
+.catch(function(e){
+setStatus('卸载异常', '#ff6b6b');
+});
+}
+
+// ── Run ──
+var currentRunMode = 'upload'; // 'upload' | 'url' | 'stream'
+var autoRunUrl = ''; // URL from Input node, for auto-run without modal
+
+function scanInputNode(){
+// Scan graph for Input nodes to determine input mode and URL
+var nodes = graph._nodes || [];
+for(var i=0; i<nodes.length; i++){
+var n = nodes[i];
+var t = n.type.replace('xclabel/', '');
+if(t === 'input'){
+return {
+mode: n.properties.input_type || 'upload',
+url: n.properties.url || ''
+};
+}
+}
+return {mode: 'upload', url: ''};
+}
+
+function onRun(){
+var inputInfo = scanInputNode();
+currentRunMode = inputInfo.mode;
+autoRunUrl = inputInfo.url;
+
+// url/stream 模式且有 URL 配置 → 直接运行，无需弹窗
+if((currentRunMode === 'url' || currentRunMode === 'stream') && autoRunUrl){
+executeWorkflow();
+return;
+}
+
+// upload 模式或 url 模式但没配 URL → 弹窗让用户提供输入
+var fileField = document.getElementById('runFileField');
+var urlField = document.getElementById('runUrlField');
+
+if(currentRunMode === 'url' || currentRunMode === 'stream'){
+fileField.style.display = 'none';
+urlField.style.display = 'block';
+document.getElementById('runUrlInput').value = autoRunUrl;
+} else {
+fileField.style.display = 'block';
+urlField.style.display = 'none';
+runImageData = null;
+document.getElementById('runImageName').textContent = '未选择';
+}
+
+document.getElementById('runModal').classList.add('open');
+document.getElementById('runResult').style.display = 'none';
+document.getElementById('runStatus').textContent = '';
+}
+
+function closeRunModal(){
+document.getElementById('runModal').classList.remove('open');
+}
+
+function handleRunImage(input){
+if(!input.files || !input.files[0]) return;
+var reader = new FileReader();
+reader.onload = function(e){
+runImageData = e.target.result.split(',')[1];
+document.getElementById('runImageName').textContent = input.files[0].name;
+};
+reader.readAsDataURL(input.files[0]);
+}
+
+function logTime(){
+var d = new Date();
+return ('0'+d.getHours()).slice(-2)+':'+
+('0'+d.getMinutes()).slice(-2)+':'+
+('0'+d.getSeconds()).slice(-2);
+}
+
+function addLog(msg, cls){
+var log = document.getElementById('runLog');
+log.style.display = 'block';
+var line = document.createElement('div');
+line.className = 'log-line';
+line.innerHTML = '<span class="log-time">['+logTime()+']</span><span class="'+cls+'">'+msg+'</span>';
+log.appendChild(line);
+log.scrollTop = log.scrollHeight;
+}
+
+function clearLog(){
+var log = document.getElementById('runLog');
+log.innerHTML = '<div class="log-placeholder" style="display:none">点击「执行」查看调试日志</div>';
+log.style.display = 'block';
+var p=document.getElementById('imgPreview');if(p)p.style.display='none';
+}
+
+function formatNodeType(type){
+var map = {input:'输入', yolo:'YOLO检测', condition:'条件判断', vllm:'VLM分析', output:'结果输出'};
+return map[type] || type;
+}
+
+function executeWorkflow(){
+var name = getWfName();
+if(!name){ toast('请输入名称'); return; }
+
+var payload = {workflow_id: name};
+
+clearLog();
+addLog('🚀 开始执行工作流 <b>'+name+'</b>', 'log-info');
+
+if(currentRunMode === 'url' || currentRunMode === 'stream'){
+var url = autoRunUrl || document.getElementById('runUrlInput').value.trim();
+if(!url){ toast('请输入 URL'); return; }
+payload.image_url = url;
+addLog('📎 输入来源: URL ('+url+')', 'log-info');
+if(currentRunMode === 'stream'){
+payload.stream = true;
+addLog('📺 视频流模式', 'log-warn');
+}
+} else {
+if(!runImageData){ toast('请选择图片'); return; }
+payload.image = runImageData;
+addLog('📎 输入来源: 上传图片', 'log-info');
+}
+
+document.getElementById('runStatus').innerHTML = '<span class="spinner"></span> 执行中...';
+addLog('⏳ 请求已发送，等待引擎响应...', 'log-running');
+
+fetch('/api/wf/execute', {
+method: 'POST',
+headers: {'Content-Type':'application/json'},
+body: JSON.stringify(payload)
+})
+.then(function(r){ return r.json(); })
+.then(function(data){
+document.getElementById('runStatus').textContent = '✅ 完成 ('+data.execution_time_ms+'ms)';
+addLog('', ''); // spacer
+
+// Show each node execution log
+var nodeOutputs = data.node_outputs || {};
+var nodeTimings = data.node_timings || {};
+var nodeStatus = data.node_status || {};
+var nodeCount = Object.keys(nodeOutputs).length;
+var doneCount = 0;
+
+// Try to determine node display info from the workflow graph
+var graphInfo = {};
+if(graph && graph._nodes){
+graph._nodes.forEach(function(n){
+graphInfo[n.id] = {
+title: n.title || n.type,
+type: n.type.replace('xclabel/', '')
+};
+});
+}
+
+Object.keys(nodeOutputs).sort().forEach(function(nid){
+var info = graphInfo[nid] || {};
+var ntype = info.type || 'unknown';
+var ntitle = info.title || nid;
+var timing = nodeTimings[nid] || '';
+var status = nodeStatus[nid] || 'ok';
+var timingStr = timing ? ' ('+timing+'ms)' : '';
+var nodeLabel = formatNodeType(ntype)+' ['+nid+'] '+ntitle;
+
+if(status === 'error'){
+addLog('❌ 节点 '+nodeLabel+' 出错'+timingStr, 'log-error');
+} else {
+addLog('✅ 节点 '+nodeLabel+' 完成'+timingStr, 'log-ok');
+}
+doneCount++;
+});
+
+// Show summary
+addLog('', '');
+var totalMs = data.execution_time_ms || 0;
+var errCount = (data.errors || []).length;
+addLog('📊 总耗时: <b>'+totalMs+'ms</b> | 节点: '+doneCount+'/'+nodeCount+
+(errCount ? ' | 错误: <span class="log-error">'+errCount+'</span>' : ''), 'log-info');
+
+if(errCount > 0){
+addLog('', '');
+data.errors.forEach(function(e){
+addLog('⚠️ '+e, 'log-error');
+});
+}
+
+	// Show image previews
+	var previewEl = document.getElementById('imgPreview');
+	var hasPreview = false;
+
+	// Input image preview
+	var inputUrl = '';
+	if(currentRunMode === 'url' || currentRunMode === 'stream'){
+	inputUrl = autoRunUrl || document.getElementById('runUrlInput').value.trim();
+	}
+	if(inputUrl){
+	document.getElementById('inputImg').src = inputUrl;
+	hasPreview = true;
+	addLog('🖼 输入图片: '+inputUrl, 'log-info');
+	}
+
+	// Annotated output image
+	var nodeOutputs = data.node_outputs || {};
+	for(var nid in nodeOutputs){
+	var out = nodeOutputs[nid];
+	if(out && out.annotated_image){
+	document.getElementById('outputImg').src = 'data:image/jpeg;base64,'+out.annotated_image;
+	hasPreview = true;
+	break;
+	}
+	}
+
+	// Detection info
+	var yoloNode = null;
+	for(var nid in nodeOutputs){
+	var info = graphInfo[nid] || {};
+	if(info.type === 'yolo'){
+	yoloNode = nodeOutputs[nid];
+	break;
+	}
+	}
+	if(yoloNode && yoloNode.detections && yoloNode.detections.length > 0){
+	var dets = yoloNode.detections;
+	addLog('🔍 检测到 <b>'+dets.length+'</b> 个目标', 'log-info');
+	dets.slice(0, 10).forEach(function(d, i){
+	addLog('   #'+(i+1)+': '+d.class_name+' ('+d.confidence.toFixed(2)+')', 'log-ok');
+	});
+	if(dets.length > 10) addLog('   ... 还有 '+(dets.length-10)+' 个', 'log-info');
+	}
+
+	if(previewEl) previewEl.style.display = hasPreview ? 'flex' : 'none';
+
+// Show raw result collapsible
+var resultEl = document.getElementById('runResult');
+resultEl.style.display = 'block';
+resultEl.textContent = JSON.stringify(data, null, 2);
+
+// Save for result panel and auto-switch to result tab
+lastRunResult = data;
+switchPropsTab('result');
+})
+.catch(function(e){
+addLog('❌ 执行失败: '+e.message, 'log-error');
+document.getElementById('runStatus').textContent = '❌ 错误';
+toast('执行失败: '+e.message);
+});
+}
+
+// ── Click outside to close dropdown ──
+document.addEventListener('click', function(e){
+var dd = document.getElementById('wfDropdown');
+if(dd.classList.contains('open') && !e.target.closest('#wfDropdown') && !e.target.closest('.btn')){
+dd.classList.remove('open');
+}
+});
+
+// ── Init on load ──
+initEditor();
+</script>
+</body>
+</html>
