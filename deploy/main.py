@@ -161,18 +161,6 @@ async def unload(req: UnloadRequest):
         raise HTTPException(status_code=404, detail=f"Engine not found: {req.engine_id}")
     return {"engine_id": req.engine_id, "status": "unloaded"}
 
-
-@app.get("/workflows")
-async def list_workflows(project_id: str = ""):
-    try:
-        if not project_id:
-            return {"workflows": []}
-        workflows = server_client.list_workflows(project_id)
-        return {"workflows": workflows}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to list workflows: {str(e)}")
-
-
 @app.post("/unload/all")
 async def unload_all():
     count = await engine_pool.clear()

@@ -1,8 +1,7 @@
-import json
 import os
 import zipfile
 from io import BytesIO
-from typing import Dict, List, Optional
+from typing import Optional
 
 import requests
 
@@ -47,20 +46,3 @@ class ServerClient:
             zf.extractall(model_dir)
 
         return model_dir
-
-    def list_model_versions(self, project_id: str) -> List[Dict]:
-        """List available model versions for a project."""
-        url = f"{self.server_url}/api/model/versions"
-        params = {"project": project_id}
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        return response.json().get("versions", [])
-
-    def list_workflows(self, project_id: str) -> List[Dict]:
-        """List available workflows for a project from the server."""
-        url = f"{self.server_url}/api/workflow/list"
-        params = {"project": project_id}
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("workflows", [])
