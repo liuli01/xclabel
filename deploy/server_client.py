@@ -9,8 +9,8 @@ import requests
 
 class ServerClient:
     def __init__(self, server_url: Optional[str] = None):
-        self.server_url = server_url or os.environ.get(
-            "SERVER_URL", "http://127.0.0.1:9924")
+        self.server_url = (server_url or os.environ.get(
+            "SERVER_URL", "http://127.0.0.1:9924")).rstrip("/")
 
     @staticmethod
     def parse_model_ref(model_ref: str) -> tuple[str, str]:
