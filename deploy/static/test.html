@@ -114,51 +114,6 @@
                 </div>
             </div>
 
-            <!-- 加载模型 -->
-            <div class="panel">
-                <h2><i class="fas fa-download"></i> 加载模型</h2>
-                <div class="load-form">
-                    <div class="form-row">
-                        <div class="form-group" style="min-width:100px;">
-                            <label>project_id</label>
-                            <input type="text" id="loadProjectId" value="sv30_seg" placeholder="工程名">
-                        </div>
-                        <div class="form-group" style="min-width:130px;">
-                            <label>model_version</label>
-                            <input type="text" id="loadVersion" value="20260618_172731" placeholder="版本号">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>task_type</label>
-                            <select id="loadTaskType">
-                                <option value="detect">detect — 目标检测</option>
-                                <option value="segment" selected>segment — 实例分割</option>
-                                <option value="classify">classify — 分类</option>
-                                <option value="pose">pose — 姿态估计</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>server_url <span style="color:#999;font-weight:400;">(可选)</span></label>
-                            <input type="text" id="loadServerUrl" placeholder="默认: http://127.0.0.1:9924">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group" style="min-width:100px;">
-                            <label><input type="checkbox" id="useLocalPath" onchange="toggleLoadMode()"> 本地路径</label>
-                            <input type="text" id="loadLocalPath" placeholder="/app/models/xxx" disabled style="background:#f5f5f5;">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>class 标签 <span style="color:#999;font-weight:400;">(逗号分隔, 留空从 server 加载)</span></label>
-                        <div class="tag-input-wrap" id="classTagWrap">
-                            <input type="text" id="classInput" placeholder="输入标签名后按回车添加" style="min-width:80px;">
-                        </div>
-                    </div>
-                    <button class="btn btn-primary" id="loadModelBtn"><i class="fas fa-cloud-download-alt"></i> 加载模型</button>
-                </div>
-            </div>
-
             <!-- 已加载引擎列表 / 下拉选择 -->
             <div class="panel">
                 <h2><i class="fas fa-microchip"></i> 选择引擎 <span id="engineCount" style="font-weight:400;color:#999;font-size:0.85em;"></span></h2>
@@ -236,7 +191,6 @@
         let currentImageData = null;   // base64 data URL
         let currentResult = null;
         let currentTaskType = 'detect';
-        let classTags = [];
         let deployBase = '';           // same-origin
 
         // ── Toast ──
@@ -245,29 +199,6 @@
             t.textContent = msg; t.style.display = 'block';
             clearTimeout(t._t); t._t = setTimeout(() => t.style.display = 'none', dur || 2500);
         }
-
-        // ── Class tag input ──
-        function renderClassTags() {
-            const wrap = document.getElementById('classTagWrap');
-            const input = document.getElementById('classInput');
-            wrap.innerHTML = '';
-            classTags.forEach((c, i) => {
-                const tag = document.createElement('span');
-                tag.className = 'class-tag';
-                tag.innerHTML = `${c} <span class="remove" data-idx="${i}">&times;</span>`;
-                tag.querySelector('.remove').onclick = () => { classTags.splice(i, 1); renderClassTags(); };
-                wrap.appendChild(tag);
-            });
-            wrap.appendChild(input);
-            input.focus();
-        }
-        document.getElementById('classInput').addEventListener('keydown', e => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                const val = e.target.value.trim();
-                if (val && !classTags.includes(val)) { classTags.push(val); e.target.value = ''; renderClassTags(); }
-            }
-        });
 
         // ── Health check ──
         async function checkHealth() {
@@ -311,7 +242,7 @@
                 document.getElementById('inferBtn').disabled = true;
                 document.getElementById('engineCount').textContent = '(0)';
                 sel.disabled = true;
-                meta.innerHTML = '<span style="color:#bbb;">暂无已加载引擎，请先加载模型</span>';
+                meta.innerHTML = '<span style="color:#bbb;">暂无已加载引擎，请使用一键预测</span>';
                 return;
             }
 
@@ -385,55 +316,6 @@
                 checkHealth();
             } catch (e) {
                 toast('❌ ' + e.message);
-            }
-        });
-
-        // ── Toggle load mode (server vs local) ──
-        function toggleLoadMode() {
-            const useLocal = document.getElementById('useLocalPath').checked;
-            document.getElementById('loadLocalPath').disabled = !useLocal;
-            document.getElementById('loadLocalPath').style.background = useLocal ? '#fff' : '#f5f5f5';
-            document.getElementById('loadServerUrl').disabled = useLocal;
-        }
-
-        // ── Load model ──
-        document.getElementById('loadModelBtn').addEventListener('click', async () => {
-            const projectId = document.getElementById('loadProjectId').value.trim();
-            const version = document.getElementById('loadVersion').value.trim();
-            if (!projectId || !version) { toast('请填写 project_id 和 model_version'); return; }
-
-            const btn = document.getElementById('loadModelBtn');
-            btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 加载中...';
-
-            const body = {
-                project_id: projectId,
-                model_version: version,
-                task_type: document.getElementById('loadTaskType').value,
-            };
-            const serverUrl = document.getElementById('loadServerUrl').value.trim();
-            if (serverUrl) body.server_url = serverUrl;
-            if (classTags.length) body.classes = classTags;
-            if (document.getElementById('useLocalPath').checked) {
-                const localPath = document.getElementById('loadLocalPath').value.trim();
-                if (!localPath) { toast('请填写本地模型路径'); btn.disabled = false; btn.innerHTML = '<i class=\"fas fa-cloud-download-alt\"></i> 加载模型'; return; }
-                body.local_path = localPath;
-            }
-
-            try {
-                const r = await fetch(deployBase + '/load/model', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                });
-                const d = await r.json();
-                if (!r.ok) throw new Error(d.detail || '加载失败');
-                toast('模型加载成功: ' + d.engine_id);
-                await refreshEngines();
-                checkHealth();
-            } catch (e) {
-                toast('❌ ' + e.message);
-            } finally {
-                btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> 加载模型';
             }
         });
 
