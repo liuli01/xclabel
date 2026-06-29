@@ -28,6 +28,36 @@ from ai_manager import (
     init_sam2_engine,
 )
 
+# ── ML Engine (integrated, no separate deploy service needed) ──
+from deploy.yolo_adapter import YoloAdapter
+from deploy.vllm_client import VllmClient
+from deploy.pipeline_manager import PipelineManager
+
+# Lazy-init ML engine pool (asyncio.Lock needs an event loop)
+_ml_engine_pool = None
+_ml_yolo_adapter = None
+_ml_vllm_client = None
+ML_CACHE_DIR = os.environ.get("CACHE_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache"))
+
+def _get_ml_engine_pool():
+    global _ml_engine_pool
+    if _ml_engine_pool is None:
+        from deploy.engine_pool import EnginePool
+        _ml_engine_pool = EnginePool(max_engines=10)
+    return _ml_engine_pool
+
+def _get_ml_yolo_adapter():
+    global _ml_yolo_adapter
+    if _ml_yolo_adapter is None:
+        _ml_yolo_adapter = YoloAdapter()
+    return _ml_yolo_adapter
+
+def _get_ml_vllm_client():
+    global _ml_vllm_client
+    if _ml_vllm_client is None:
+        _ml_vllm_client = VllmClient()
+    return _ml_vllm_client
+
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 CORS(app)
@@ -107,7 +137,7 @@ class VideoAnnotationTask:
             # 获取API配置
             api_url = self.api_config.get('apiUrl', 'http://127.0.0.1:1234/v1')
             api_key = self.api_config.get('apiKey', '')
-            timeout = int(self.api_config.get('timeout', 30))
+            timeout = int(self.api_config.get('timeout', 300))
             prompt = self.api_config.get('prompt', '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}')
             model = self.api_config.get('model', 'qwen/qwen3-vl-8b')
             inference_tool = self.api_config.get('inferenceTool', 'LMStudio')
@@ -1534,7 +1564,7 @@ def ai_label():
         # 获取API配置
         api_url = api_config.get('apiUrl', 'http://127.0.0.1:1234/v1')
         api_key = api_config.get('apiKey', '')
-        timeout = int(api_config.get('timeout', 30))
+        timeout = int(api_config.get('timeout', 300))
         prompt = api_config.get('prompt', '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}')
         model = api_config.get('model', 'qwen/qwen3-vl-8b')
         inference_tool = api_config.get('inferenceTool', 'LMStudio')
@@ -1593,28 +1623,37 @@ def ai_label():
                         if isinstance(detection, dict):
                             label = selected_label  # 使用选中的标签
                             confidence = detection.get("confidence", 0.0)
-                            bbox = detection.get("bbox", [0, 0, 0, 0])
+                            obb_points = detection.get("points", None)
 
-                            # 转换为前端期望的标注格式
-                            # 确保bbox是一个包含四个数值的列表
-                            bbox = list(map(float, bbox)) if isinstance(bbox, (list, tuple)) else [0, 0, 0, 0]
-                            # 确保bbox有四个值
-                            if len(bbox) < 4:
-                                bbox = bbox + [0] * (4 - len(bbox))
-                            x1, y1, x2, y2 = bbox[:4]  # 只取前四个值
-
-                            annotation = {
-                                "id": str(uuid.uuid4()),  # 添加唯一ID
-                                "class": label,  # 前端使用class字段
-                                "type": "rectangle",  # 前端需要type字段
-                                "points": [
-                                    [x1, y1],
-                                    [x2, y1],
-                                    [x2, y2],
-                                    [x1, y2]
-                                ],  # 转换为points数组
-                                "confidence": confidence
-                            }
+                            if obb_points and len(obb_points) >= 3:
+                                # OBB 格式：直接使用 4 角点
+                                points = [[float(p[0]), float(p[1])] for p in obb_points[:4]]
+                                annotation = {
+                                    "id": str(uuid.uuid4()),
+                                    "class": label,
+                                    "type": "obb",
+                                    "points": points,
+                                    "confidence": confidence
+                                }
+                            else:
+                                # 矩形框格式（现有逻辑）
+                                bbox = detection.get("bbox", [0, 0, 0, 0])
+                                bbox = list(map(float, bbox)) if isinstance(bbox, (list, tuple)) else [0, 0, 0, 0]
+                                if len(bbox) < 4:
+                                    bbox = bbox + [0] * (4 - len(bbox))
+                                x1, y1, x2, y2 = bbox[:4]
+                                annotation = {
+                                    "id": str(uuid.uuid4()),
+                                    "class": label,
+                                    "type": "rectangle",
+                                    "points": [
+                                        [x1, y1],
+                                        [x2, y1],
+                                        [x2, y2],
+                                        [x1, y2]
+                                    ],
+                                    "confidence": confidence
+                                }
                             image_annotations.append(annotation)
 
                     # 更新标注信息
@@ -1838,7 +1877,7 @@ def load_api_config():
                 "model": "qwen/qwen3-vl-8b",
                 "apiUrl": "http://127.0.0.1:1234/v1",
                 "apiKey": "",
-                "timeout": 30,
+                "timeout": 300,
                 "prompt": "检测图中物体，返回JSON：{\"detections\":[{\"label\":\"类别\",\"confidence\":0.9,\"bbox\":[x1,y1,x2,y2]}]}"
             }
             return jsonify({'success': True, 'config': default_config})
@@ -1866,7 +1905,7 @@ def api_test():
         image_file = request.files['image']
         api_url = request.form.get('api_url', 'http://127.0.0.1:1234/v1')
         api_key = request.form.get('api_key', '')
-        timeout = int(request.form.get('timeout', 30))
+        timeout = int(request.form.get('timeout', 300))
         prompt = request.form.get('prompt', '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}')
         inference_tool = request.form.get('inferenceTool', 'LMStudio')
         model = request.form.get('model', 'qwen/qwen3-vl-8b')
@@ -1976,7 +2015,7 @@ def auto_label_image():
         output_dir = request.form.get('output_dir', 'output')
         api_url = request.form.get('api_url', 'http://127.0.0.1:1234/v1')
         api_key = request.form.get('api_key', '')
-        timeout = int(request.form.get('timeout', 30))
+        timeout = int(request.form.get('timeout', 300))
         prompt = request.form.get('prompt', '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}')
         inference_tool = request.form.get('inferenceTool', 'LMStudio')
 
@@ -2107,7 +2146,7 @@ def auto_label_video():
         # 获取API配置
         api_url = api_config.get('apiUrl', 'http://127.0.0.1:1234/v1')
         api_key = api_config.get('apiKey', '')
-        timeout = int(api_config.get('timeout', 30))
+        timeout = int(api_config.get('timeout', 300))
         prompt = api_config.get('prompt', '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}')
         model = api_config.get('model', 'qwen/qwen3-vl-8b')
         inference_tool = api_config.get('inferenceTool', 'LMStudio')
@@ -3160,8 +3199,10 @@ def update_global_config():
     """更新全局配置。"""
     data = request.json or {}
     config = load_global_config()
-    if 'nndeploy_app_url' in data:
-        config['nndeploy_app_url'] = data['nndeploy_app_url'].strip()
+    if 'deploy_server_url' in data:
+        config['deploy_server_url'] = data['deploy_server_url'].strip()
+    if 'xclabel_server_url' in data:
+        config['xclabel_server_url'] = data['xclabel_server_url'].strip()
     save_global_config(config)
     return jsonify({'success': True})
 
@@ -3419,6 +3460,37 @@ class YOLOTrainingTask:
                 version_model_path = os.path.join(version_model_dir, base_model)
                 if os.path.exists(version_model_path):
                     base_model = version_model_path
+                else:
+                    # 本地不存在则下载到版本目录，避免文件散落到根目录
+                    os.makedirs(version_model_dir, exist_ok=True)
+                    logging.info(f'本地模型 {base_model} 不存在，尝试下载到 {version_model_dir}')
+                    try:
+                        python_path = get_ultralytics_python_path(yolo_version)
+                        # 利用 Ultralytics 自身的下载逻辑，下载后移动到版本目录
+                        download_script = (
+                            'import os, shutil; '
+                            'from ultralytics import YOLO; '
+                            f'model = YOLO("{base_model}"); '
+                            f'dest = r"{version_model_path}"; '
+                            'os.makedirs(os.path.dirname(dest), exist_ok=True); '
+                            f'src = "{base_model}"; '
+                            'if os.path.exists(src) and os.path.normpath(src) != os.path.normpath(dest): '
+                            '    shutil.move(src, dest); '
+                            '    print(f"Moved to {dest}"); '
+                            'else: '
+                            '    print(f"Already at {dest}")'
+                        )
+                        result = subprocess.run(
+                            [python_path, '-c', download_script],
+                            capture_output=True, text=True, timeout=300,
+                        )
+                        if os.path.exists(version_model_path):
+                            base_model = version_model_path
+                            logging.info(f'模型已下载到: {version_model_path}')
+                        else:
+                            logging.warning(f'下载失败，将使用在线模式: {result.stderr[:500]}')
+                    except Exception as e:
+                        logging.warning(f'自动下载失败，将使用在线模式: {e}')
 
         # 生成版本号（时间戳）
         from datetime import datetime
@@ -4211,14 +4283,11 @@ def train_model_info():
                 if yolo_training_task.project_name == project_name and getattr(yolo_training_task, 'version', None) == name:
                     is_training = True
                     train_progress = yolo_training_task.progress
-            # Check if published to nndeploy-app
-            published = os.path.exists(os.path.join('resources', 'models', project_name, f'{project_name}_{name}.onnx'))
 
             versions.append({
                 'version': name,
                 'exists': os.path.exists(v_best),
                 'onnx_exists': os.path.exists(os.path.join(vdir, 'best.onnx')),
-                'published': published,
                 'model_path': v_best if os.path.exists(v_best) else None,
                 'is_training': is_training,
                 'train_progress': train_progress,
@@ -4380,89 +4449,7 @@ def model_versions():
     return jsonify({'versions': versions})
 
 
-@app.route('/api/model/publish', methods=['POST'])
-def model_publish():
-    """Publish a model version to nndeploy-app resources."""
-    data = request.json or {}
-    project_name = data.get('project')
-    version = data.get('version')
-    if not project_name or not version:
-        return jsonify({'error': 'Missing project or version parameter'}), 400
-
-    project_path = get_project_path(project_name)
-    version_dir = os.path.join(project_path, 'models', version)
-    onnx_path = os.path.join(version_dir, 'best.onnx')
-
-    # Ensure ONNX exists
-    if not os.path.exists(onnx_path):
-        # Try to export first
-        model_path = os.path.join(version_dir, 'best.pt')
-        if not os.path.exists(model_path):
-            return jsonify({'error': 'Model file not found'}), 404
-
-        info_path = os.path.join(version_dir, 'model_info.json')
-        yolo_version = 'yolo11'
-        if os.path.exists(info_path):
-            try:
-                with open(info_path, 'r', encoding='utf-8') as f:
-                    info = json.load(f)
-                    yolo_version = info.get('yolo_version', 'yolo11')
-            except Exception:
-                pass
-
-        python_path = get_ultralytics_python_path(yolo_version)
-        cmd = [
-            python_path,
-            os.path.join(app.root_path, 'plugins', 'export_yolo.py'),
-            '--model', model_path,
-            '--output', onnx_path,
-        ]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
-            if result.returncode != 0 or not os.path.exists(onnx_path):
-                err = result.stderr[-800:] if result.stderr else result.stdout[-800:]
-                return jsonify({'error': f'ONNX export failed: {err}'}), 500
-        except Exception as e:
-            return jsonify({'error': f'Export exception: {str(e)}'}), 500
-
-    # Copy to nndeploy resources
-    resources_models_dir = os.path.join('resources', 'models', project_name)
-    os.makedirs(resources_models_dir, exist_ok=True)
-    target_path = os.path.join(resources_models_dir, f'{project_name}_{version}.onnx')
-
-    try:
-        shutil.copy2(onnx_path, target_path)
-        return jsonify({
-            'success': True,
-            'message': f'Model published to resources/models/{project_name}/{project_name}_{version}.onnx',
-            'path': target_path,
-        })
-    except Exception as e:
-        return jsonify({'error': f'Failed to copy model: {str(e)}'}), 500
-
-
-@app.route('/api/model/unpublish', methods=['POST'])
-def model_unpublish():
-    """Unpublish a model version from nndeploy-app resources."""
-    data = request.json or {}
-    project_name = data.get('project')
-    version = data.get('version')
-    if not project_name or not version:
-        return jsonify({'error': 'Missing project or version parameter'}), 400
-
-    target_path = os.path.join('resources', 'models', project_name, f'{project_name}_{version}.onnx')
-
-    if not os.path.exists(target_path):
-        return jsonify({'error': 'Model not published'}), 404
-
-    try:
-        os.remove(target_path)
-        return jsonify({
-            'success': True,
-            'message': f'Model unpublished: resources/models/{project_name}/{project_name}_{version}.onnx',
-        })
-    except Exception as e:
-        return jsonify({'error': f'Failed to remove model: {str(e)}'}), 500
+# (nndeploy publish/unpublish endpoints removed — models are served directly via /api/model/download)
 
 
 @app.route('/api/admin/rebuild-metadata')
@@ -4582,40 +4569,7 @@ def workflow_list():
     return jsonify({'workflows': workflows})
 
 
-@app.route('/api/nndeploy/workflows')
-def nndeploy_workflows():
-    """Proxy to nndeploy-app workflow list API."""
-    nndeploy_url = os.environ.get('NNDEPLOY_APP_URL', 'http://127.0.0.1:8002')
-    try:
-        resp = requests.get(f'{nndeploy_url}/api/workflows', timeout=30)
-        resp.raise_for_status()
-        return jsonify(resp.json())
-    except requests.exceptions.ConnectionError:
-        return jsonify({'error': 'nndeploy-app is not accessible'}), 503
-    except requests.exceptions.Timeout:
-        return jsonify({'error': 'nndeploy-app request timed out'}), 504
-    except Exception as e:
-        return jsonify({'error': f'Failed to fetch workflows: {str(e)}'}), 502
-
-
-@app.route('/api/nndeploy/workflow/download')
-def nndeploy_workflow_download():
-    """Proxy to nndeploy-app workflow download API."""
-    workflow_id = request.args.get('id')
-    if not workflow_id:
-        return jsonify({'error': 'Missing id parameter'}), 400
-
-    nndeploy_url = os.environ.get('NNDEPLOY_APP_URL', 'http://127.0.0.1:8002')
-    try:
-        resp = requests.get(f'{nndeploy_url}/api/workflow/download/{workflow_id}', timeout=30)
-        resp.raise_for_status()
-        return jsonify(resp.json())
-    except requests.exceptions.ConnectionError:
-        return jsonify({'error': 'nndeploy-app is not accessible'}), 503
-    except requests.exceptions.Timeout:
-        return jsonify({'error': 'nndeploy-app request timed out'}), 504
-    except Exception as e:
-        return jsonify({'error': f'Failed to download workflow: {str(e)}'}), 502
+# (nndeploy workflow proxy endpoints removed — use /api/workflow/ endpoints instead)
 
 
 @app.route('/train')
@@ -4628,6 +4582,12 @@ def train_page():
 def model_test_page():
     """模型测试页面。"""
     return render_template('model-test.html', version=APP_VERSION)
+
+
+@app.route('/workflow')
+def workflow_page():
+    """工作流编排页面。"""
+    return render_template('workflow.html', version=APP_VERSION)
 
 
 @app.route('/api/project-test-images')
@@ -5006,6 +4966,125 @@ def sam_models():
     })
 
 
+@app.route('/api/sam/check-models', methods=['GET'])
+def sam_check_models():
+    """检查 SAM2 各版本权重文件是否存在并返回大小信息"""
+    from ai_manager import SAM2Engine
+    models_dir = os.environ.get("SAM_MODELS_DIR", os.path.join(BASE_PATH, "models"))
+    model_sizes = {
+        "tiny": 155,
+        "small": 184,
+        "base_plus": 298,
+    }
+    models = []
+    for key, cfg in SAM2Engine.MODEL_CONFIGS.items():
+        ckpt_path = os.path.join(models_dir, cfg["checkpoint"])
+        size_mb = model_sizes.get(key, 0)
+        models.append({
+            'id': key,
+            'name': f"SAM 2 Hiera {key.capitalize()}",
+            'checkpoint': cfg["checkpoint"],
+            'available': os.path.exists(ckpt_path),
+            'size_mb': size_mb,
+        })
+    return jsonify({'success': True, 'models': models})
+
+
+@app.route('/api/sam/download-models')
+def sam_download_models():
+    """从 hf-mirror.com 下载 SAM2 权重文件（SSE 流式推送）"""
+    import requests
+    import time
+
+    models_str = request.args.get('models', '')
+    model_ids = [m.strip() for m in models_str.split(',') if m.strip()]
+
+    from ai_manager import SAM2Engine
+    models_dir = os.environ.get("SAM_MODELS_DIR", os.path.join(BASE_PATH, "models"))
+    os.makedirs(models_dir, exist_ok=True)
+
+    HF_MIRROR_URLS = {
+        "tiny": "https://hf-mirror.com/facebook/sam2-hiera-tiny/resolve/main/sam2_hiera_tiny.pt",
+        "small": "https://hf-mirror.com/facebook/sam2-hiera-small/resolve/main/sam2_hiera_small.pt",
+        "base_plus": "https://hf-mirror.com/facebook/sam2-hiera-base-plus/resolve/main/sam2_hiera_base_plus.pt",
+    }
+
+    def generate():
+        yield f"data: {json.dumps({'status': 'started', 'message': '准备下载 SAM2 模型...', 'progress': 0})}\n\n"
+        time.sleep(0.3)
+
+        try:
+            to_download = []
+            skipped = []
+            for mid in model_ids:
+                if mid not in SAM2Engine.MODEL_CONFIGS:
+                    yield f"data: {json.dumps({'status': 'error', 'message': f'未知模型: {mid}', 'progress': 0})}\n\n"
+                    return
+                ckpt = SAM2Engine.MODEL_CONFIGS[mid]["checkpoint"]
+                ckpt_path = os.path.join(models_dir, ckpt)
+                if os.path.exists(ckpt_path):
+                    skipped.append(mid)
+                else:
+                    to_download.append(mid)
+
+            if skipped:
+                skipped_str = ', '.join(skipped)
+                yield f"data: {json.dumps({'message': f'已跳过已存在的模型: {skipped_str}', 'progress': 5})}\n\n"
+                time.sleep(0.3)
+
+            if not to_download:
+                yield f"data: {json.dumps({'status': 'completed', 'message': '所有选中模型均已存在，无需下载', 'progress': 100})}\n\n"
+                return
+
+            total = len(to_download)
+            completed_count = 0
+            for mid in to_download:
+                ckpt = SAM2Engine.MODEL_CONFIGS[mid]["checkpoint"]
+                url = HF_MIRROR_URLS.get(mid)
+                if not url:
+                    yield f"data: {json.dumps({'status': 'error', 'message': f'模型 {mid} 无下载地址', 'progress': 0})}\n\n"
+                    return
+
+                save_path = os.path.join(models_dir, ckpt)
+                yield f"data: {json.dumps({'status': 'downloading', 'model': ckpt, 'progress': int(completed_count / total * 80) + 10, 'message': f'正在下载 {ckpt}...'})}\n\n"
+
+                try:
+                    resp = requests.get(url, stream=True, timeout=300)
+                    resp.raise_for_status()
+
+                    total_size = int(resp.headers.get('content-length', 0))
+                    downloaded = 0
+                    chunk_size = 8192
+
+                    with open(save_path, 'wb') as f:
+                        for chunk in resp.iter_content(chunk_size=chunk_size):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total_size > 0:
+                                    pct = int(downloaded / total_size * 100)
+                                    overall_pct = int(completed_count / total * 80) + int(pct * 0.8 / total)
+                                    downloaded_mb = downloaded / (1024 * 1024)
+                                    total_mb = total_size / (1024 * 1024)
+                                    yield f"data: {json.dumps({'status': 'downloading', 'model': ckpt, 'progress': min(overall_pct, 99), 'downloaded_mb': round(downloaded_mb, 1), 'total_mb': round(total_mb, 1), 'message': f'下载 {ckpt}: {downloaded_mb:.1f}MB / {total_mb:.1f}MB'})}\n\n"
+
+                    completed_count += 1
+                    yield f"data: {json.dumps({'status': 'model_completed', 'model': ckpt, 'progress': int(completed_count / total * 80) + 10, 'message': f'{ckpt} 下载完成'})}\n\n"
+                    time.sleep(0.2)
+
+                except Exception as e:
+                    yield f"data: {json.dumps({'status': 'error', 'model': ckpt, 'message': f'{ckpt} 下载失败: {str(e)}', 'progress': 0})}\n\n"
+                    return
+
+            yield f"data: {json.dumps({'status': 'completed', 'message': '所有 SAM2 模型下载完成', 'progress': 100})}\n\n"
+
+        except Exception as e:
+            import traceback
+            yield f"data: {json.dumps({'status': 'error', 'message': f'下载失败: {str(e)}', 'progress': 0, 'traceback': traceback.format_exc()})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream')
+
+
 @app.route('/api/sam/switch-model', methods=['POST'])
 def sam_switch_model():
     """切换 SAM 模型类型"""
@@ -5165,7 +5244,7 @@ def auto_label_vlm_sam():
 
         api_url = ai_config.get('apiUrl', 'http://127.0.0.1:1234/v1')
         api_key = ai_config.get('apiKey', '')
-        timeout = int(ai_config.get('timeout', 30))
+        timeout = int(ai_config.get('timeout', 300))
         prompt = prompt_override or ai_config.get('prompt', '')
         model = ai_config.get('model', 'qwen/qwen3-vl-8b')
         inference_tool = ai_config.get('inferenceTool', 'LMStudio')
@@ -5303,7 +5382,549 @@ def auto_label_vlm_sam():
         return jsonify({'error': str(e)}), 500
 
 
-# ========================== 主程序入口 ==========================
+# ========================== Smart Pipeline Workflow API ==========================
+
+def _litegraph_to_workflow(graph_json: dict) -> dict:
+    """Convert LiteGraph.js serialized graph to workflow.yaml-compatible dict."""
+    nodes = []
+    for node in graph_json.get("nodes", []):
+        raw_type = node.get("type", "yolo").lower().replace("node", "")
+        # Normalize: strip category prefix (e.g. "xclabel/yolo" → "yolo")
+        _type = raw_type.split("/")[-1] if "/" in raw_type else raw_type
+        cfg = {
+            "id": str(node.get("id", node.get("title", "unknown"))),
+            "type": _type,
+        }
+        props = node.get("properties", {})
+        if _type == "input":
+            cfg["input_type"] = props.get("input_type", "upload")
+            if props.get("url"):
+                cfg["url"] = props.get("url")
+        elif _type == "yolo":
+            cfg["model"] = props.get("model", "")
+            cfg["task"] = props.get("task", "detect")
+            cfg["params"] = {
+                "conf": float(props.get("conf", 0.25)),
+                "iou": float(props.get("iou", 0.5)),
+            }
+        elif _type == "condition":
+            cfg["expression"] = props.get("expression", "max_conf > 0.5")
+        elif _type == "vllm":
+            cfg["api_url"] = props.get("api_url", "")
+            cfg["model_name"] = props.get("model_name", "")
+            cfg["prompt"] = props.get("prompt", "")
+            cfg["extract_roi"] = props.get("extract_roi", False)
+            cfg["params"] = {
+                "temperature": float(props.get("temperature", 0.1)),
+                "max_tokens": int(props.get("max_tokens", 256)),
+            }
+            cfg["condition"] = props.get("condition", "")
+        elif _type == "output":
+            cfg["source"] = [props.get("source", "")] if props.get("source") else []
+        nodes.append(cfg)
+
+    # Build links (source->target relationships)
+    links = graph_json.get("links", [])
+    for link in links:
+        src_node = next((n for n in graph_json.get("nodes", [])
+                         if n.get("id") == link.get("origin_id")), None)
+        dst_node = next((n for n in graph_json.get("nodes", [])
+                         if n.get("id") == link.get("target_id")), None)
+        if dst_node:
+            _dst_type = dst_node.get("type", "").lower().replace("node", "").split("/")[-1]
+        else:
+            _dst_type = ""
+        if _dst_type == "vllm":
+            cond_node = next((n for n in nodes if n["id"] == str(src_node.get("id"))), None)
+            if cond_node:
+                dst_vllm = next((n for n in nodes if n["id"] == str(dst_node.get("id"))), None)
+                if dst_vllm:
+                    dst_vllm["condition"] = cond_node["id"]
+        if _dst_type == "output":
+            out_node = next((n for n in nodes if n["id"] == str(dst_node.get("id"))), None)
+            src_name = str(src_node.get("id")) if src_node else ""
+            if out_node and src_name:
+                if "source" not in out_node:
+                    out_node["source"] = []
+                out_node["source"].append(src_name)
+
+    title = graph_json.get("title", "untitled")
+    return {
+        "version": "1.0",
+        "name": title.replace(" ", "_").lower(),
+        "pipeline": nodes,
+    }
+
+
+@app.route('/api/workflow/list')
+def project_workflow_list():
+    """List all workflow files for a project."""
+    project_name = request.args.get('project')
+    if not project_name:
+        return jsonify({'error': '缺少 project 参数'}), 400
+    workflows_dir = os.path.join(get_project_path(project_name), 'workflows')
+    if not os.path.isdir(workflows_dir):
+        return jsonify({'workflows': []})
+    workflows = []
+    for f in sorted(os.listdir(workflows_dir)):
+        if f.endswith('.yaml') or f.endswith('.yml'):
+            workflows.append({
+                'name': f.replace('.yaml', '').replace('.yml', ''),
+                'file': f,
+            })
+    return jsonify({'workflows': workflows})
+
+
+@app.route('/api/workflow/get')
+def workflow_get():
+    """Get a single workflow file content. Prefers JSON (for graph restore) over YAML."""
+    project_name = request.args.get('project')
+    name = request.args.get('workflow')
+    if not project_name or not name:
+        return jsonify({'error': '缺少 project 或 workflow 参数'}), 400
+    workflows_dir = os.path.join(get_project_path(project_name), 'workflows')
+
+    # Try JSON first — contains the full LiteGraph serialization for graph.configure()
+    json_path = os.path.join(workflows_dir, f'{name}.json')
+    if os.path.exists(json_path):
+        with open(json_path, 'r', encoding='utf-8') as f:
+            return jsonify({'name': name, 'content': json.load(f), 'format': 'json'})
+
+    # Fall back to YAML (read-only, cannot restore graph canvas)
+    for ext in ('.yaml', '.yml'):
+        path = os.path.join(workflows_dir, f'{name}{ext}')
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return jsonify({'name': name, 'content': f.read(), 'format': 'yaml'})
+
+    return jsonify({'error': 'Workflow 文件不存在'}), 404
+
+
+@app.route('/api/workflow/save', methods=['POST'])
+def workflow_save():
+    """Save a workflow from LiteGraph JSON → workflow.yaml."""
+    data = request.json or {}
+    project_name = data.get('project')
+    graph_json = data.get('graph')
+    name = data.get('name', 'untitled')
+
+    if not project_name or not graph_json:
+        return jsonify({'error': '缺少 project 或 graph 参数'}), 400
+
+    workflow_dir = os.path.join(get_project_path(project_name), 'workflows')
+    os.makedirs(workflow_dir, exist_ok=True)
+
+    # Convert LiteGraph JSON to workflow YAML
+    workflow_dict = _litegraph_to_workflow(graph_json)
+    if name != 'untitled':
+        workflow_dict['name'] = name
+
+    # Write YAML (for deploy engine)
+    import yaml as yaml_lib
+    base_name = workflow_dict['name']
+    yaml_path = os.path.join(workflow_dir, f"{base_name}.yaml")
+    with open(yaml_path, 'w', encoding='utf-8') as f:
+        yaml_lib.dump(workflow_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    # Write raw LiteGraph JSON (for re-editing the graph)
+    json_path = os.path.join(workflow_dir, f"{base_name}.json")
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(graph_json, f, ensure_ascii=False, indent=2)
+
+    return jsonify({'success': True, 'name': base_name, 'path': yaml_path})
+
+
+@app.route('/api/workflow/delete', methods=['POST'])
+def workflow_delete():
+    """Delete a workflow file."""
+    data = request.json or {}
+    project_name = data.get('project')
+    name = data.get('name')
+    if not project_name or not name:
+        return jsonify({'error': '缺少 project 或 name 参数'}), 400
+
+    workflows_dir = os.path.join(get_project_path(project_name), 'workflows')
+    deleted = []
+    for ext in ('.yaml', '.yml'):
+        path = os.path.join(workflows_dir, f'{name}{ext}')
+        if os.path.exists(path):
+            os.remove(path)
+            deleted.append(f'{name}{ext}')
+    json_path = os.path.join(workflows_dir, f'{name}.json')
+    if os.path.exists(json_path):
+        os.remove(json_path)
+        deleted.append(f'{name}.json')
+
+    if deleted:
+        return jsonify({'success': True, 'deleted': deleted})
+    return jsonify({'error': 'Workflow 文件不存在'}), 404
+
+
+@app.route('/api/workflow/deploy', methods=['POST'])
+def workflow_deploy():
+    """Deploy a workflow to the deploy service."""
+    data = request.json or {}
+    project_name = data.get('project')
+    name = data.get('name')
+    if not project_name or not name:
+        return jsonify({'error': '缺少 project 或 name 参数'}), 400
+
+    # Find the workflow file
+    workflows_dir = os.path.join(get_project_path(project_name), 'workflows')
+    workflow_path = None
+    for ext in ('.yaml', '.yml'):
+        candidate = os.path.join(workflows_dir, f'{name}{ext}')
+        if os.path.exists(candidate):
+            workflow_path = candidate
+            break
+
+    if not workflow_path:
+        return jsonify({'error': 'Workflow 文件不存在'}), 404
+
+    # Call deploy service
+    deploy_url = os.environ.get('DEPLOY_SERVER_URL', 'http://127.0.0.1:8000')
+    try:
+        resp = requests.post(
+            f'{deploy_url}/pipeline/load',
+            json={'workflow_path': workflow_path},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        return jsonify({'error': f'部署失败: {str(e)}'}), 502
+
+
+@app.route('/api/workflow/undeploy', methods=['POST'])
+def workflow_undeploy():
+    """Undeploy a workflow from the deploy service."""
+    data = request.json or {}
+    project_name = data.get('project')
+    name = data.get('name', '')
+    if not project_name or not name:
+        return jsonify({'error': '缺少 project 或 name 参数'}), 400
+
+    deploy_url = os.environ.get('DEPLOY_SERVER_URL', 'http://127.0.0.1:8000')
+    try:
+        resp = requests.post(
+            f'{deploy_url}/pipeline/unload',
+            json={'workflow_id': name},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        # Fallback: try legacy /unload endpoint
+        try:
+            resp = requests.post(
+                f'{deploy_url}/unload',
+                json={'engine_id': name},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return jsonify(resp.json())
+        except requests.RequestException:
+            return jsonify({'error': f'取消部署失败: {str(e)}'}), 502
+
+
+# ========================== Project-Independent Workflow API (可单独部署) ==========================
+
+import json as json_lib
+import yaml as yaml_lib
+WORKFLOW_DIR = os.environ.get('WORKFLOW_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'workflows'))
+
+
+def _wf_path(name: str) -> str:
+    """Get JSON path for a workflow."""
+    return os.path.join(WORKFLOW_DIR, f'{name}.json')
+
+
+def _wf_yaml_path(name: str) -> str:
+    """Get YAML path for a workflow."""
+    return os.path.join(WORKFLOW_DIR, f'{name}.yaml')
+
+
+def _wf_safe_name(name: str) -> str:
+    """Sanitize workflow name to a safe filesystem name."""
+    safe = ''.join(c for c in name.strip() if c.isalnum() or c in '_-.').strip()
+    return safe or 'untitled'
+
+
+@app.route('/api/wf/list')
+def wf_list():
+    """List all independent workflows (project-independent)."""
+    os.makedirs(WORKFLOW_DIR, exist_ok=True)
+    workflows = []
+    for f in sorted(os.listdir(WORKFLOW_DIR)):
+        if f.endswith('.json'):
+            wf_name = f[:-5]
+            try:
+                with open(os.path.join(WORKFLOW_DIR, f), 'r', encoding='utf-8') as fh:
+                    data = json_lib.load(fh)
+                node_count = len(data.get('nodes', []))
+            except Exception:
+                node_count = 0
+            workflows.append({'name': wf_name, 'nodes': node_count, 'file': f})
+    return jsonify({'workflows': workflows})
+
+
+@app.route('/api/wf/get')
+def wf_get():
+    """Get a workflow's serialized graph JSON."""
+    name = request.args.get('name', '')
+    if not name:
+        return jsonify({'error': '缺少 name 参数'}), 400
+    path = _wf_path(name)
+    if not os.path.exists(path):
+        return jsonify({'error': '工作流不存在'}), 404
+    with open(path, 'r', encoding='utf-8') as f:
+        return jsonify({'name': name, 'content': json_lib.load(f)})
+
+
+@app.route('/api/wf/save', methods=['POST'])
+def wf_save():
+    """Save a workflow (LiteGraph JSON + YAML, no project dependency)."""
+    data = request.json or {}
+    graph_data = data.get('graph')
+    name = _wf_safe_name(data.get('name', 'untitled'))
+    if not graph_data:
+        return jsonify({'error': '缺少 graph 数据'}), 400
+
+    os.makedirs(WORKFLOW_DIR, exist_ok=True)
+
+    # Save raw LiteGraph JSON (for re-editing)
+    json_path = _wf_path(name)
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json_lib.dump(graph_data, f, ensure_ascii=False, indent=2)
+
+    # Convert and save YAML (for deploy engine)
+    try:
+        workflow_dict = _litegraph_to_workflow(graph_data)
+        workflow_dict['name'] = name
+        yaml_path = _wf_yaml_path(name)
+        with open(yaml_path, 'w', encoding='utf-8') as f:
+            yaml_lib.dump(workflow_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    except Exception as e:
+        # YAML conversion is best-effort; JSON save always succeeds
+        pass
+
+    return jsonify({'success': True, 'name': name, 'path': json_path})
+
+
+@app.route('/api/wf/delete', methods=['POST'])
+def wf_delete():
+    """Delete a workflow."""
+    data = request.json or {}
+    name = _wf_safe_name(data.get('name', ''))
+    if not name:
+        return jsonify({'error': '缺少 name 参数'}), 400
+
+    deleted = []
+    for path in [_wf_path(name), _wf_yaml_path(name)]:
+        if os.path.exists(path):
+            os.remove(path)
+            deleted.append(os.path.basename(path))
+
+    if deleted:
+        return jsonify({'success': True, 'deleted': deleted})
+    return jsonify({'error': '工作流不存在'}), 404
+
+
+@app.route('/api/wf/deploy', methods=['POST'])
+def wf_deploy():
+    """Deploy a workflow to the deploy service."""
+    data = request.json or {}
+    name = _wf_safe_name(data.get('name', ''))
+    if not name:
+        return jsonify({'error': '缺少 name 参数'}), 400
+
+    yaml_path = _wf_yaml_path(name)
+    if not os.path.exists(yaml_path):
+        # Try converting from JSON
+        json_path = _wf_path(name)
+        if not os.path.exists(json_path):
+            return jsonify({'error': '工作流不存在，请先保存'}), 404
+        with open(json_path, 'r', encoding='utf-8') as f:
+            graph_data = json_lib.load(f)
+        workflow_dict = _litegraph_to_workflow(graph_data)
+        workflow_dict['name'] = name
+        with open(yaml_path, 'w', encoding='utf-8') as f:
+            yaml_lib.dump(workflow_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    deploy_url = os.environ.get('DEPLOY_SERVER_URL', 'http://127.0.0.1:8000')
+    try:
+        resp = requests.post(
+            f'{deploy_url}/pipeline/load',
+            json={'workflow_path': os.path.abspath(yaml_path)},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        return jsonify({'error': f'部署失败: {str(e)}'}), 502
+
+
+@app.route('/api/wf/undeploy', methods=['POST'])
+def wf_undeploy():
+    """Undeploy a workflow from the deploy service."""
+    data = request.json or {}
+    name = _wf_safe_name(data.get('name', ''))
+    if not name:
+        return jsonify({'error': '缺少 name 参数'}), 400
+
+    deploy_url = os.environ.get('DEPLOY_SERVER_URL', 'http://127.0.0.1:8000')
+    try:
+        resp = requests.post(
+            f'{deploy_url}/pipeline/unload',
+            json={'workflow_id': name},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        return jsonify({'error': f'取消部署失败: {str(e)}'}), 502
+
+
+@app.route('/api/wf/load_model', methods=['POST'])
+def wf_load_model():
+    """Load a YOLO model into the local ML engine pool."""
+    data = request.json or {}
+    engine_id = data.get('engine_id', '')
+    model_dir = data.get('model_dir', '')
+    task_type = data.get('task_type', 'detect')
+
+    if not engine_id or not model_dir:
+        return jsonify({'error': '缺少 engine_id 或 model_dir 参数'}), 400
+
+    try:
+        pool = _get_ml_engine_pool()
+        yolo = _get_ml_yolo_adapter()
+
+        # Check if already loaded
+        import asyncio
+        existing = asyncio.run(pool.get(engine_id))
+        if existing and existing.engine is not None:
+            return jsonify({'engine_id': engine_id, 'status': 'already_loaded'})
+
+        # Find model file
+        model_path = None
+        for ext in ['.engine', '.pt', '.onnx']:
+            for f in os.listdir(model_dir):
+                if f.endswith(ext):
+                    model_path = os.path.join(model_dir, f)
+                    break
+            if model_path:
+                break
+
+        if not model_path or not os.path.exists(model_path):
+            return jsonify({'error': f'在 {model_dir} 中未找到模型文件'}), 404
+
+        model = yolo.load_model(model_path)
+        metadata = {'task_type': task_type, 'model_file': model_path}
+
+        from deploy.engine_pool import Engine
+        engine = Engine(
+            engine_id=engine_id,
+            engine_type='yolo_model',
+            project_id=data.get('project_id', ''),
+            engine=model,
+            metadata=metadata,
+        )
+        import asyncio
+        asyncio.run(pool.add(engine))
+
+        return jsonify({'engine_id': engine_id, 'status': 'loaded', 'metadata': metadata})
+    except ImportError as e:
+        return jsonify({'error': f'加载模型失败: {str(e)}。需要 ultralytics 库'}), 503
+    except Exception as e:
+        return jsonify({'error': f'加载模型失败: {str(e)}'}), 500
+
+
+@app.route('/api/wf/execute', methods=['POST'])
+def wf_execute():
+    """Execute a workflow locally (no separate deploy service needed)."""
+    data = request.json or {}
+    name = data.get('workflow_id', '')
+    exec_mode = data.get('exec_mode', 'auto')  # 'auto', 'local', 'remote'
+    if not name:
+        return jsonify({'error': '缺少 workflow_id 参数'}), 400
+
+    # 1. Try external deploy service (unless forced local)
+    if exec_mode != 'local':
+        deploy_url = os.environ.get('DEPLOY_SERVER_URL', 'http://127.0.0.1:8000')
+        try:
+            resp = requests.post(
+                f'{deploy_url}/pipeline/execute',
+                json=data,
+                timeout=8,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            result['mode'] = 'remote_deploy'
+            return jsonify(result)
+        except requests.RequestException:
+            if exec_mode == 'remote':
+                return jsonify({'error': '远程 deploy 服务不可用，请检查 DEPLOY_SERVER_URL'}), 502
+            pass  # fall back to local engine
+
+    # 2. Local execution with integrated ML engine
+    import yaml as _yaml
+    yaml_path = _wf_yaml_path(name)
+    json_path = _wf_path(name)
+
+    if not os.path.exists(yaml_path) and not os.path.exists(json_path):
+        return jsonify({'error': f'工作流 "{name}" 不存在，请先保存'}), 404
+
+    # Ensure YAML exists
+    if not os.path.exists(yaml_path):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                graph_data = json_lib.load(f)
+            workflow_dict = _litegraph_to_workflow(graph_data)
+            workflow_dict['name'] = name
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                _yaml.dump(workflow_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        except Exception:
+            return jsonify({'error': '工作流文件解析失败'}), 500
+
+    # Execute pipeline with integrated engine
+    try:
+        import io as _io, base64 as _b64
+        mgr = PipelineManager(yaml_path)
+        image = None
+        image_warning = None
+        if data.get('image'):
+            try:
+                image = _io.BytesIO(_b64.b64decode(data['image']))
+            except Exception:
+                image_warning = 'base64 图片解码失败'
+        elif data.get('image_url'):
+            try:
+                import urllib.request
+                resp = urllib.request.urlopen(data['image_url'], timeout=15)
+                image = _io.BytesIO(resp.read())
+            except Exception as url_err:
+                image_warning = f'图片下载失败: {url_err}'
+
+        import asyncio
+        engine_pool = _get_ml_engine_pool()
+        yolo = _get_ml_yolo_adapter()
+        vllm = _get_ml_vllm_client()
+        result = asyncio.run(mgr.execute(
+            image=image,
+            engine_pool=engine_pool,
+            yolo_adapter=yolo,
+            vllm_client=vllm,
+        ))
+        result['workflow_id'] = name
+        result['mode'] = 'local_engine'
+        if image_warning:
+            result.setdefault('warnings', []).append(image_warning)
+        return jsonify(result)
+    except ImportError as e:
+        return jsonify({'error': f'本地执行需要 deploy 模块: {str(e)}'}), 503
+    except Exception as e:
+        return jsonify({'error': f'执行失败: {str(e)}', 'workflow_id': name}), 500
 if __name__ == '__main__':
     import argparse
 
