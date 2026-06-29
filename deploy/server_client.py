@@ -63,4 +63,4 @@ class ServerClient:
         response = requests.get(url, params=params, timeout=30)
         response.raise_for_status()
         data = response.json()
-        return data.get("workflows", data if isinstance(data, list) else [])
+        return data.get("workflows", [])
