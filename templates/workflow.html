@@ -208,6 +208,15 @@ transition:height .25s;flex-shrink:0;font-family:Consolas,'Courier New',monospac
 <div class="field" id="runUrlField" style="display:none"><label>图片/视频流 URL</label><input type="text" id="runUrlInput" placeholder="https://example.com/image.jpg" style="width:100%;background:#0f3460;color:#e0e0e0;border:1px solid #533483;padding:5px 7px;border-radius:3px;font-size:.82em">
 <div style="font-size:.74em;color:#888;margin-top:3px">支持 HTTP/HTTPS/RTSP 流</div></div>
 </div>
+<div style="display:flex;gap:10px;align-items:center;margin:8px 0">
+  <label style="font-size:.76em;color:#aaa">执行模式</label>
+  <select id="execModeSelect" onchange="updateExecModeHint()" style="background:#0f3460;color:#e0e0e0;border:1px solid #533483;padding:3px 6px;border-radius:3px;font-size:.78em">
+    <option value="auto">自动（远程→本地）</option>
+    <option value="local">仅本地引擎</option>
+    <option value="remote">仅远程 Deploy</option>
+  </select>
+  <span id="execModeHint" style="font-size:.7em;color:#666">自动尝试远程，失败回退本地</span>
+</div>
 <div class="modal-actions">
 <button class="btn btn-primary" onclick="executeWorkflow()"><i class="fas fa-play"></i> 执行</button>
 <button class="btn btn-outline" onclick="closeRunModal()">取消</button>
@@ -1059,6 +1068,14 @@ log.appendChild(line);
 log.scrollTop = log.scrollHeight;
 }
 
+function updateExecModeHint(){
+  var sel = document.getElementById('execModeSelect');
+  var hint = document.getElementById('execModeHint');
+  if(!sel || !hint) return;
+  var hints = {auto:'自动尝试远程，失败回退本地', local:'仅在本地引擎执行，不连接远程服务', remote:'仅通过远程 Deploy 执行，失败则报错'};
+  hint.textContent = hints[sel.value] || '';
+}
+
 function clearLog(){
 var log = document.getElementById('runLog');
 log.innerHTML = '<div class="log-placeholder" style="display:none">点击「执行」查看调试日志</div>';
@@ -1090,6 +1107,8 @@ var name = getWfName();
 if(!name){ toast('请输入名称'); return; }
 
 var payload = {workflow_id: name};
+var modeSelect = document.getElementById('execModeSelect');
+if(modeSelect) payload.exec_mode = modeSelect.value;
 
 clearLog();
 addLog('🚀 开始执行工作流 <b>'+name+'</b>', 'log-info');
