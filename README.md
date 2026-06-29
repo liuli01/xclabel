@@ -143,28 +143,6 @@ docker run -d \
 
 ---
 
-#### 3. xclabel-nndeploy
-
-| 项目 | 说明 |
-|------|------|
-| **用途** | Workflow 编排服务，提供可视化 WebUI 编辑推理 workflow（DAG 编排） |
-| **镜像** | `liuli01/xclabel-nndeploy` / `ghcr.io/liuli01/xclabel-nndeploy` |
-| **端口** | 8002 |
-| **构建文件** | `nndeploy-app/Dockerfile` |
-
-```bash
-docker run -d \
-  --name nndeploy-app \
-  -p 8002:8002 \
-  -v nndeploy-resources:/app/resources \
-  ghcr.io/liuli01/xclabel-nndeploy:latest \
-  nndeploy-app --port 8002 --resources /app/resources
-```
-
-WebUI 访问：`http://localhost:8002`
-
----
-
 #### 4. xclabel-deploy-cpu
 
 | 项目 | 说明 |
@@ -224,7 +202,6 @@ docker compose -f docker-compose.server.yml up -d
 | 服务 | 端口 | 镜像 | 说明 |
 |------|------|------|------|
 | xclabel-server | 9924 | xclabel-server-gpu | 标注/训练 WebUI |
-| nndeploy-app | 8002 | xclabel-nndeploy | Workflow 编排 WebUI |
 | xclabel-deploy-cpu | 8000 | xclabel-deploy-cpu | CPU 推理 API |
 | xclabel-deploy-gpu | 8001 | xclabel-deploy-gpu | GPU 推理 API |
 
@@ -251,13 +228,6 @@ docker compose -f docker-compose.server.yml up -d
                          │
                          ▼
               ┌─────────────────────┐
-              │   nndeploy-app      │
-              │   (Workflow 编排)   │
-              │   localhost:8002    │
-              └────────┬────────────┘
-                       │ workflow .json
-                       ▼
-              ┌─────────────────────┐
               │   xclabel-deploy    │
               │   (推理部署 API)     │
               │   CPU:8000 GPU:8001 │
@@ -268,7 +238,7 @@ docker compose -f docker-compose.server.yml up -d
 
 xclabel-deploy 提供 REST API，支持模型推理和 workflow 执行两种模式。
 
-**Workflow 执行（nndeploy DAG）：**
+**Workflow 执行：**
 
 1. **查看可用 workflow 列表：**
 ```bash
@@ -357,18 +327,6 @@ curl -X POST http://localhost:8000/load/model \
 
 `server_url` 参数会覆盖环境变量 `SERVER_URL`，适用于临时指向不同的 server 实例。
 
-**更新 Deploy 代码（开发调试）：**
-
-如需修改 deploy 代码后快速测试，可将文件拷贝到运行中的容器，然后重启容器使变更生效：
-
-```bash
-# 拷贝修改后的文件到容器
-docker cp deploy/nndeploy_adapter.py xclabel-deploy-cpu:/app/nndeploy_adapter.py
-
-# 重启容器加载新代码
-docker restart xclabel-deploy-cpu
-```
-
 **ONNX 输出格式说明：**
 
 deploy 容器支持两种 ONNX 导出格式：
@@ -421,15 +379,10 @@ xclabel/
 ├── Dockerfile.deploy.gpu     # Deploy GPU 镜像构建
 ├── docker-compose.server.yml # 完整栈 Docker Compose
 ├── .gitignore               # Git忽略文件配置
-├── nndeploy-app/             # Workflow 编排服务
-│   ├── Dockerfile            # nndeploy 镜像构建
-│   ├── app/                  # FastAPI WebUI
-│   └── ...
 ├── deploy/                   # 推理部署服务源码
 │   ├── main.py               # FastAPI 推理服务入口
 │   ├── requirements.txt      # Deploy 依赖列表
 │   ├── engine_pool.py        # 推理引擎池管理
-│   ├── nndeploy_adapter.py   # nndeploy 推理适配器
 │   └── server_client.py      # Server 端 HTTP 客户端
 ├── static/
 │   ├── all.min.css           # Font Awesome图标库
@@ -455,7 +408,7 @@ xclabel/
 │   ├── images/
 │   ├── videos/
 │   ├── audios/
-│   ├── db/                   # nndeploy-app SQLite
+│   ├── db/                   # 数据库文件
 │   └── template/             # 内置模板
 └── plugins/                  # 插件目录（运行时创建）
 ```
