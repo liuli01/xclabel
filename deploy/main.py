@@ -345,6 +345,8 @@ async def predict(req: PredictRequest):
     existing = await engine_pool.get(engine_id)
     if existing is None or existing.engine is None:
         # Need to download and load
+        if not yolo_adapter.available:
+            raise HTTPException(status_code=500, detail="YOLO adapter is not available")
         client = server_client
         if req.server_url:
             client = ServerClient(req.server_url)
