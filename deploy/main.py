@@ -203,6 +203,10 @@ async def load_model(req: LoadModelRequest):
             "metadata": metadata,
         }
 
+    except requests.HTTPError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Model not found on server: {req.project_id}/{req.model_version}")
+        raise HTTPException(status_code=502, detail=f"Failed to load model: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to load model: {str(e)}")
 
@@ -353,6 +357,10 @@ async def predict(req: PredictRequest):
 
         try:
             model_dir = client.download_model(req.model, cache_dir=CACHE_DIR)
+        except requests.HTTPError as e:
+            if e.response.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Model not found on server: {req.model}")
+            raise HTTPException(status_code=502, detail=f"Failed to download model from server: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Failed to download model from server: {str(e)}")
 
