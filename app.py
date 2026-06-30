@@ -5395,8 +5395,13 @@ def _add_source(target_id: str, source_id: str, nodes: list):
 
 def _litegraph_to_workflow(graph_json: dict) -> dict:
     """Convert LiteGraph.js serialized graph to workflow.yaml-compatible dict."""
+    # Sort nodes by their LiteGraph order field for consistent YAML ordering
+    sorted_nodes = sorted(
+        graph_json.get("nodes", []),
+        key=lambda n: n.get("order", n.get("id", 999))
+    )
     nodes = []
-    for node in graph_json.get("nodes", []):
+    for node in sorted_nodes:
         raw_type = node.get("type", "yolo").lower().replace("node", "")
         # Normalize: strip category prefix (e.g. "xclabel/yolo" → "yolo")
         _type = raw_type.split("/")[-1] if "/" in raw_type else raw_type
@@ -5751,6 +5756,10 @@ def wf_save():
     os.makedirs(WORKFLOW_DIR, exist_ok=True)
 
     _derive_vllm_conditions(graph_data)
+
+    # Sort nodes by order for consistent file ordering
+    if "nodes" in graph_data:
+        graph_data["nodes"].sort(key=lambda n: n.get("order", n.get("id", 999)))
 
     # Save raw LiteGraph JSON (for re-editing)
     json_path = _wf_path(name)
