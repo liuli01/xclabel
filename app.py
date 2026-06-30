@@ -5442,6 +5442,7 @@ def _litegraph_to_workflow(graph_json: dict) -> dict:
             cfg["source"] = [props.get("source", "")] if props.get("source") else []
         elif _type == "calc":
             cfg["expression"] = props.get("expression", "")
+            cfg["condition"] = props.get("condition", "")
             cfg["params"] = {
                 "output_field": props.get("output_field", "computed"),
             }
@@ -5486,7 +5487,18 @@ def _litegraph_to_workflow(graph_json: dict) -> dict:
         if _dst_type == "output":
             _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
         if _dst_type == "calc":
-            _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
+            src_node_obj = next((n for n in graph_json.get("nodes", []) if n.get("id") == link.get("origin_id")), None)
+            _src_type = src_node_obj.get("type", "").lower().replace("node", "").split("/")[-1] if src_node_obj else ""
+            # Link from condition → calc sets the condition gate
+            if _src_type == "condition":
+                cond_node = next((n for n in nodes if n["id"] == str(src_node.get("id"))), None)
+                if cond_node:
+                    dst_calc = next((n for n in nodes if n["id"] == str(dst_node.get("id"))), None)
+                    if dst_calc:
+                        dst_calc["condition"] = cond_node["id"]
+            # Other incoming links (input/yolo) add as source dependency for DAG ordering
+            else:
+                _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
 
     title = graph_json.get("title", "untitled")
     return {
@@ -5719,12 +5731,12 @@ def wf_get():
         return jsonify({'error': '工作流不存在'}), 404
     with open(path, 'r', encoding='utf-8') as f:
         graph_data = json_lib.load(f)
-        _derive_vllm_conditions(graph_data)
+        _derive_node_conditions(graph_data)
         return jsonify({'name': name, 'content': graph_data})
 
 
-def _derive_vllm_conditions(graph_data: dict):
-    """Patch VLLM node properties.condition from incoming links.
+def _derive_node_conditions(graph_data: dict):
+    """Patch VLLM/Calc node properties.condition from incoming links.
 
     The front-end ``condition`` property may be empty when the graph was
     last saved, but the YAML derive step already reads it from link
@@ -5734,11 +5746,13 @@ def _derive_vllm_conditions(graph_data: dict):
     if not graph_data or 'links' not in graph_data or 'nodes' not in graph_data:
         return
     node_map = {n.get('id'): n for n in graph_data['nodes']}
+    TARGET_TYPES = ('vllm', 'calc')
     for link in graph_data['links']:
         if isinstance(link, (list, tuple)):
             link = {'origin_id': link[1], 'target_id': link[3]}
         dst = node_map.get(link.get('target_id'))
-        if dst and 'vllm' in (dst.get('type', '') or '').lower():
+        dst_type = (dst.get('type', '') or '').lower() if dst else ''
+        if any(t in dst_type for t in TARGET_TYPES):
             src = node_map.get(link.get('origin_id'))
             if src and 'condition' in (src.get('type', '') or '').lower():
                 dst.setdefault('properties', {})['condition'] = str(src['id'])
@@ -5755,7 +5769,7 @@ def wf_save():
 
     os.makedirs(WORKFLOW_DIR, exist_ok=True)
 
-    _derive_vllm_conditions(graph_data)
+    _derive_node_conditions(graph_data)
 
     # Sort nodes by order for consistent file ordering
     if "nodes" in graph_data:

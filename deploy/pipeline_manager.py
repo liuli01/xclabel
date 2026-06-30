@@ -157,7 +157,7 @@ class PipelineManager:
         node_map = {n.id: n for n in nodes}
 
         for node in nodes:
-            if node.type == NodeType.VLLM and node.condition:
+            if node.type in (NodeType.VLLM, NodeType.CALC) and node.condition:
                 dag[node.id].append(node.condition)
             if node.source:
                 for src in node.source:
@@ -446,6 +446,12 @@ class PipelineManager:
 
     async def _exec_calc(self, node: NodeConfig, ctx: PipelineContext) -> Dict:
         """执行计算表达式，对每个检测结果求值并追加字段。"""
+        # Condition gate check — 与 VLLM 节点行为一致
+        if node.condition:
+            gate = ctx.branch_conditions.get(node.condition, False)
+            if not gate:
+                return {"calc_result": None, "skipped": True}
+
         expression = node.expression or node.params.get('expression', '')
         output_field = node.params.get('output_field', 'computed')
 
