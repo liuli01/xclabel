@@ -1,0 +1,40 @@
+{
+  "last_node_id": 1,
+  "last_link_id": 0,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "xclabel/input",
+      "pos": [
+        436,
+        163
+      ],
+      "size": [
+        240,
+        200
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "image",
+          "type": "image",
+          "links": null
+        }
+      ],
+      "properties": {
+        "input_type": "url",
+        "url": ""
+      },
+      "widgets_values": [
+        "url"
+      ]
+    }
+  ],
+  "links": [],
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}

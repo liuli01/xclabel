@@ -1,0 +1,6 @@
+version: '1.0'
+name: sv30
+pipeline:
+- id: '1'
+  type: input
+  input_type: url

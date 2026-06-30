@@ -7,6 +7,7 @@ PipelineManager — 工作流编排引擎。
 
 import asyncio
 import json
+import math
 import os
 import time
 from dataclasses import dataclass, field
@@ -27,6 +28,7 @@ class NodeType(str, Enum):
     CONDITION = "condition"
     VLLM = "vllm"
     OUTPUT = "output"
+    CALC = "calc"
 
 
 class YoloParams(BaseModel):
@@ -243,6 +245,8 @@ class PipelineManager:
             return await self._exec_vllm(node, ctx, vllm_client)
         elif node.type == NodeType.OUTPUT:
             return self._exec_output(node, ctx)
+        elif node.type == NodeType.CALC:
+            return await self._exec_calc(node, ctx)
         else:
             raise ValueError(f"Unknown node type: {node.type}")
 
@@ -328,6 +332,75 @@ class PipelineManager:
             result = False
         return {"condition_result": result}
 
+    # ── Calc node ──
+
+    @staticmethod
+    def _eval_expression(expression: str, vars: dict) -> float:
+        """安全求值数学表达式，仅允许白名单函数和预置变量。"""
+        import ast
+
+        SAFE = {
+            'abs': abs, 'round': round, 'min': min, 'max': max,
+            'sqrt': math.sqrt, 'ceil': math.ceil, 'floor': math.floor,
+            'pi': math.pi,
+        }
+
+        tree = ast.parse(expression.strip(), mode='eval')
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                if node.id not in vars and node.id not in SAFE:
+                    raise NameError(f"不支持的变量/函数: {node.id}")
+            elif isinstance(node, ast.Call):
+                if not isinstance(node.func, ast.Name):
+                    raise TypeError("不支持复杂函数调用")
+                if node.func.id not in SAFE:
+                    raise NameError(f"不支持的函数: {node.func.id}")
+
+        namespace = {**SAFE, **vars}
+        try:
+            return float(eval(expression, {"__builtins__": {}}, namespace))
+        except Exception as e:
+            raise ValueError(f"表达式求值失败: {e}")
+
+    @staticmethod
+    def _calc_area(bbox, points) -> float:
+        """计算面积。有 segmentation points 时用鞋带公式，否则用 bbox 面积。"""
+        if points and len(points) >= 6:
+            xs = points[0::2]
+            ys = points[1::2]
+            n = len(xs)
+            if n < 3:
+                return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+            area = 0.0
+            for i in range(n):
+                j = (i + 1) % n
+                area += xs[i] * ys[j]
+                area -= xs[j] * ys[i]
+            return abs(area) / 2.0
+        else:
+            w = max(0.0, bbox[2] - bbox[0])
+            h = max(0.0, bbox[3] - bbox[1])
+            return w * h
+
+    @staticmethod
+    def _calc_perimeter(bbox, points) -> float:
+        """计算周长。有 segmentation points 时用多边形周长，否则用 bbox 周长。"""
+        if points and len(points) >= 6:
+            xs = points[0::2]
+            ys = points[1::2]
+            n = len(xs)
+            if n < 3:
+                return 2 * ((bbox[2] - bbox[0]) + (bbox[3] - bbox[1]))
+            perimeter = 0.0
+            for i in range(n):
+                j = (i + 1) % n
+                perimeter += math.sqrt((xs[j] - xs[i])**2 + (ys[j] - ys[i])**2)
+            return perimeter
+        else:
+            w = max(0.0, bbox[2] - bbox[0])
+            h = max(0.0, bbox[3] - bbox[1])
+            return 2 * (w + h)
+
     # ── VLLM node ──
 
     async def _exec_vllm(self, node: NodeConfig, ctx: PipelineContext,
@@ -356,6 +429,57 @@ class PipelineManager:
             timeout=node.params.get("timeout", 30),
         )
         return {"vllm_result": result}
+
+    # ── Calc node execution ──
+
+    async def _exec_calc(self, node: NodeConfig, ctx: PipelineContext) -> Dict:
+        """执行计算表达式，对每个检测结果求值并追加字段。"""
+        expression = node.expression or node.params.get('expression', '')
+        output_field = node.params.get('output_field', 'computed')
+
+        if not expression:
+            return {"detections": ctx.detections or [],
+                    "computed_values": []}
+
+        detections = ctx.detections or []
+        computed_detections = []
+        computed_values = []
+
+        for det in detections:
+            bbox = det.get('bbox', [0, 0, 0, 0])
+            points = det.get('points', [])
+
+            vars = {
+                'conf': float(det.get('confidence', 0)),
+                'class_id': int(det.get('class_id', 0)),
+                'class_name': det.get('class_name', ''),
+                'x1': float(bbox[0]), 'y1': float(bbox[1]),
+                'x2': float(bbox[2]), 'y2': float(bbox[3]),
+                'width': max(0.0, float(bbox[2]) - float(bbox[0])),
+                'height': max(0.0, float(bbox[3]) - float(bbox[1])),
+            }
+            vars['area'] = self._calc_area(bbox, points)
+            vars['perimeter'] = self._calc_perimeter(bbox, points)
+
+            try:
+                result = self._eval_expression(expression, vars)
+                result = round(float(result), 6)
+            except Exception as e:
+                ctx.warnings.append(
+                    f"Calc node {node.id} expression error for detection: {e}")
+                result = None
+
+            det[output_field] = result
+            computed_detections.append(det)
+            if result is not None:
+                computed_values.append(result)
+
+        return {
+            "detections": computed_detections,
+            "computed_values": computed_values,
+            "expression": expression,
+            "output_field": output_field,
+        }
 
     # ── Output node ──
 
