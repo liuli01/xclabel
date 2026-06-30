@@ -656,6 +656,11 @@ html += fieldHtml('number', 'max_tokens', p.max_tokens ?? 256, '', '1', '1');
 else if(type === 'xclabel/output' || type === 'output'){
 html += '<div class="field"><div class="help" style="color:#888">自动合并上游节点输出。<br>连线到 Output 节点的数据都会被汇总。</div></div>';
 }
+else if(type === 'xclabel/calc' || type === 'calc'){
+html += '<div class="field"><label>expression</label><textarea onchange="setProp(\'expression\',this.value)" placeholder="(width * height) / 100" style="font-family:Consolas,monospace;min-height:60px">'+(p.expression||'')+'</textarea></div>';
+html += fieldHtml('text', 'output_field', p.output_field || 'computed', '结果字段名');
+html += '<div class="help" style="padding:0 12px;margin:-4px 0 6px;line-height:1.6">可用变量: conf, class_id, class_name, x1, y1, x2, y2, width, height, area, perimeter<br>可用函数: abs, round, sqrt, ceil, floor, min, max, pi</div>';
+}
 
 content.innerHTML = html;
 }
@@ -750,7 +755,7 @@ function renderResultPanel(data){
     var statusIcon = status === 'ok' ? '✅' : status === 'error' ? '❌' : '⏭';
     var statusColor = status === 'ok' ? '#4caf50' : status === 'error' ? '#ff6b6b' : '#ffa726';
 
-    var typeIcons = {input:'fa-cloud-upload-alt', yolo:'fa-eye', condition:'fa-code-branch', vllm:'fa-brain', output:'fa-file-export'};
+    var typeIcons = {input:'fa-cloud-upload-alt', yolo:'fa-eye', condition:'fa-code-branch', calc:'fa-calculator', vllm:'fa-brain', output:'fa-file-export'};
     var typeIcon = typeIcons[ntype] || 'fa-circle';
 
     var detailHtml = '';
@@ -795,6 +800,19 @@ function renderResultPanel(data){
       detailHtml += '<div style="color:#888">表达式: <code style="color:#ce93d8">'+(out.expression || '')+'</code></div>';
       if(out.evaluated !== undefined){
         detailHtml += '<div style="color:#888">结果: <b style="color:'+(out.evaluated?'#4caf50':'#ff6b6b')+'">'+out.evaluated+'</b></div>';
+      }
+    }
+    if(ntype === 'calc'){
+      detailHtml += '<div style="color:#888">表达式: <code style="color:#ce93d8">'+(out.expression || '')+'</code></div>';
+      detailHtml += '<div style="color:#888">输出字段: <b style="color:#e0e0e0">'+(out.output_field || 'computed')+'</b></div>';
+      if(out.computed_values && out.computed_values.length){
+        detailHtml += '<div style="color:#888;margin:3px 0">计算结果:</div>';
+        out.computed_values.slice(0, 15).forEach(function(v, i){
+          detailHtml += '<div class="det-row">#'+(i+1)+': <b style="color:#ffa726">'+v+'</b></div>';
+        });
+        if(out.computed_values.length > 15){
+          detailHtml += '<div style="color:#888">... 还有 '+(out.computed_values.length-15)+' 个</div>';
+        }
       }
     }
     if(ntype === 'vllm' && out.vllm_result){
@@ -920,6 +938,10 @@ else if(t === 'vllm'){
 y += '    api_url: "' + (p.api_url || '') + '"\n    model_name: "' + (p.model_name || '') + '"\n    prompt: "' + (p.prompt || '').replace(/\n/g,'\\n') + '"\n';
 if(p.condition) y += '    condition: "' + p.condition + '"\n';
 y += '    extract_roi: ' + (!!p.extract_roi) + '\n    params:\n      temperature: ' + (p.temperature || 0.1) + '\n      max_tokens: ' + (p.max_tokens || 256) + '\n';
+}
+else if(t === 'calc'){
+y += '    expression: "' + (p.expression || '').replace(/"/g, '\\"') + '"\n';
+y += '    params:\n      output_field: "' + (p.output_field || 'computed') + '"\n';
 }
 else if(t === 'output'){
 var src = links.filter(function(l){ return l.to === n.id; }).map(function(l){ return l.from; });
@@ -1228,7 +1250,7 @@ var p=document.getElementById('imgPreview');if(p)p.style.display='none';
 }
 
 function formatNodeType(type){
-var map = {input:'输入', yolo:'YOLO检测', condition:'条件判断', vllm:'VLM分析', output:'结果输出'};
+var map = {input:'输入', yolo:'YOLO检测', condition:'条件判断', calc:'计算', vllm:'VLM分析', output:'结果输出'};
 return map[type] || type;
 }
 
