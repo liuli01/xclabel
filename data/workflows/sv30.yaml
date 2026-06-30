@@ -14,11 +14,11 @@ pipeline:
     iou: 0.5
   source:
   - '1'
-- id: '8'
+- id: '12'
   type: output
   source:
-  - '9'
-- id: '9'
+  - '11'
+- id: '11'
   type: calc
   expression: (width * height) / 100
   params:

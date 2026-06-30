@@ -723,9 +723,11 @@ function renderResultPanel(data){
   var mode = data.mode || 'unknown';
 
   var graphInfo = {};
+  var nodeOrder = {};
   if(graph && graph._nodes){
     graph._nodes.forEach(function(n){
       graphInfo[n.id] = {title: n.title || n.type, type: n.type.replace('xclabel/', '')};
+      nodeOrder[n.id] = n.order !== undefined ? n.order : 999;
     });
   }
 
@@ -743,7 +745,9 @@ function renderResultPanel(data){
   summaryHtml += '</div>';
 
   var nodeHtml = '';
-  Object.keys(nodeOutputs).sort().forEach(function(nid){
+  Object.keys(nodeOutputs).sort(function(a,b){
+    return (nodeOrder[a] || 999) - (nodeOrder[b] || 999);
+  }).forEach(function(nid){
     var info = graphInfo[nid] || {};
     var ntype = info.type || 'unknown';
     var ntitle = info.title || nid;
@@ -766,21 +770,36 @@ function renderResultPanel(data){
       }
     }
     if(ntype === 'output'){
-      // Show annotated images from source nodes, not a global img element
+      // Show annotated images from source nodes
       var merged = out.merged || {};
       var srcKeys = Object.keys(merged);
+      var hasImg = false;
       if(srcKeys.length){
         srcKeys.forEach(function(srcId){
           var srcData = merged[srcId];
           if(srcData && srcData.annotated_image){
             detailHtml += '<div style="color:#888;font-size:.85em;margin:2px 0">来自节点 '+srcId+'：</div>';
             detailHtml += '<img src="data:image/jpeg;base64,'+srcData.annotated_image+'" onclick="event.stopPropagation();openZoom(this.src)" title="点击放大" style="max-width:100%;max-height:180px;border-radius:3px;cursor:zoom-in;margin:4px 0">';
-          } else {
-            detailHtml += '<div style="color:#888">节点 '+srcId+'：'+(srcData?'无标注图':'无数据')+'</div>';
+            hasImg = true;
+          } else if(srcData && !srcData.annotated_image){
+            detailHtml += '<div style="color:#888">节点 '+srcId+'：无标注图</div>';
           }
         });
       }
-      if(!detailHtml.match(/<img\b/)){
+      // Also show annotated images from other upstream nodes (e.g. YOLO → Calc → Output)
+      if(!hasImg){
+        Object.keys(nodeOutputs).sort(function(a,b){
+          return (nodeOrder[a] || 999) - (nodeOrder[b] || 999);
+        }).forEach(function(srcId){
+          var srcData = nodeOutputs[srcId];
+          if(srcData && srcData.annotated_image && String(srcId) !== nid){
+            detailHtml += '<div style="color:#888;font-size:.85em;margin:2px 0">🔗 '+graphInfo[srcId]?.title||srcId+' 标注图：</div>';
+            detailHtml += '<img src="data:image/jpeg;base64,'+srcData.annotated_image+'" onclick="event.stopPropagation();openZoom(this.src)" title="点击放大" style="max-width:100%;max-height:180px;border-radius:3px;cursor:zoom-in;margin:4px 0">';
+            hasImg = true;
+          }
+        });
+      }
+      if(!hasImg){
         detailHtml += '<div style="color:#888">合并上游节点输出</div>';
       }
     }
@@ -1314,16 +1333,20 @@ var doneCount = 0;
 
 // Try to determine node display info from the workflow graph
 var graphInfo = {};
+var nodeOrder = {};
 if(graph && graph._nodes){
 graph._nodes.forEach(function(n){
 graphInfo[n.id] = {
 title: n.title || n.type,
 type: n.type.replace('xclabel/', '')
 };
+nodeOrder[n.id] = n.order !== undefined ? n.order : 999;
 });
 }
 
-Object.keys(nodeOutputs).sort().forEach(function(nid){
+Object.keys(nodeOutputs).sort(function(a,b){
+return (nodeOrder[a] || 999) - (nodeOrder[b] || 999);
+}).forEach(function(nid){
 var info = graphInfo[nid] || {};
 var ntype = info.type || 'unknown';
 var ntitle = info.title || nid;

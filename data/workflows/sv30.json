@@ -1,6 +1,6 @@
 {
-  "last_node_id": 9,
-  "last_link_id": 9,
+  "last_node_id": 12,
+  "last_link_id": 12,
   "nodes": [
     {
       "id": 1,
@@ -60,14 +60,14 @@
       "outputs": [
         {
           "links": [
-            8
+            11
           ],
           "name": "detections",
           "slot_index": 0,
           "type": "array"
         }
       ],
-      "title": "YOLO [254ms]",
+      "title": "YOLO [407ms]",
       "properties": {
         "model": "sv30_seg/20260618_172731",
         "task": "segment",
@@ -82,11 +82,11 @@
       "boxcolor": "#27ae60"
     },
     {
-      "id": 8,
+      "id": 12,
       "type": "xclabel/output",
       "pos": [
-        1444,
-        165
+        1434,
+        211
       ],
       "size": [
         240,
@@ -97,21 +97,19 @@
       "mode": 0,
       "inputs": [
         {
-          "link": 9,
           "name": "in",
-          "type": "*"
+          "type": "*",
+          "link": 12
         }
       ],
-      "title": "Output [0ms]",
-      "properties": {},
-      "boxcolor": "#27ae60"
+      "properties": {}
     },
     {
-      "id": 9,
+      "id": 11,
       "type": "xclabel/calc",
       "pos": [
-        1142,
-        160
+        1087,
+        214
       ],
       "size": [
         200,
@@ -122,27 +120,25 @@
       "mode": 0,
       "inputs": [
         {
-          "link": 8,
           "name": "in",
-          "type": "array"
+          "type": "array",
+          "link": 11
         }
       ],
       "outputs": [
         {
-          "links": [
-            9
-          ],
           "name": "out",
-          "slot_index": 0,
-          "type": "array"
+          "type": "array",
+          "links": [
+            12
+          ],
+          "slot_index": 0
         }
       ],
-      "title": "计算  [0ms]",
       "properties": {
         "expression": "(width * height) / 100",
         "output_field": "computed"
-      },
-      "boxcolor": "#27ae60"
+      }
     }
   ],
   "links": [
@@ -155,18 +151,18 @@
       "image"
     ],
     [
-      8,
+      11,
       2,
       0,
-      9,
+      11,
       0,
       "array"
     ],
     [
-      9,
-      9,
+      12,
+      11,
       0,
-      8,
+      12,
       0,
       "*"
     ]
