@@ -349,6 +349,31 @@ OutputNode.desc = '输出合并';
 OutputNode.prototype.onNodeSelected = function(){ showProperties(this); };
 OutputNode.prototype.onDeselected = function(){ hideProperties(); };
 
+// Calc Node
+function CalcNode(){
+	this.properties = {
+		expression: '(width * height) / 100',
+		output_field: 'computed'
+	};
+	this.addInput('in', 'array');
+	this.addOutput('out', 'array');
+	this.size = this.computeSize();
+}
+CalcNode.title = '计算';
+CalcNode.desc = '数学表达式计算';
+CalcNode.prototype.onNodeSelected = function(){ showProperties(this); };
+CalcNode.prototype.onDeselected = function(){ hideProperties(); };
+CalcNode.prototype.onDrawBackground = function(ctx){
+	if(this.properties.expression){
+		ctx.fillStyle = '#aaa';
+		ctx.font = '11px monospace';
+		var text = this.properties.expression.length > 22
+			? this.properties.expression.substring(0, 22) + '...'
+			: this.properties.expression;
+		ctx.fillText(text, 10, this.size[1] - 10);
+	}
+};
+
 // ── Input Node ──
 function InputNode(){
 this.properties = {
@@ -381,6 +406,8 @@ LiteGraph.registerNodeType('yolo', YoloNode);
 LiteGraph.registerNodeType('condition', ConditionNode);
 LiteGraph.registerNodeType('vllm', VllmNode);
 LiteGraph.registerNodeType('output', OutputNode);
+LiteGraph.registerNodeType('xclabel/calc', CalcNode);
+LiteGraph.registerNodeType('calc', CalcNode);
 
 // ── Initialize Editor (following official LiteGraph.Editor pattern) ──
 function initEditor(){
@@ -495,6 +522,7 @@ palette.innerHTML =
 '<div class="palette-item" data-type="xclabel/input" draggable="true"><i class="fas fa-cloud-upload-alt"></i>Input<span class="badge">上传/URL/流</span></div>' +
 '<div class="palette-item" data-type="xclabel/yolo" draggable="true"><i class="fas fa-eye"></i>YOLO<span class="badge">检测/分割</span></div>' +
 '<div class="palette-item" data-type="xclabel/condition" draggable="true"><i class="fas fa-code-branch"></i>条件<span class="badge">分支</span></div>' +
+'<div class="palette-item" data-type="xclabel/calc" draggable="true"><i class="fas fa-calculator"></i>计算<span class="badge">表达式</span></div>' +
 '<div class="palette-item" data-type="xclabel/vllm" draggable="true"><i class="fas fa-brain"></i>VLLM<span class="badge">分析</span></div>' +
 '<div class="palette-item" data-type="xclabel/output" draggable="true"><i class="fas fa-file-export"></i>输出<span class="badge">合并</span></div>';
 content.insertBefore(palette, content.firstChild);
