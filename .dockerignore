@@ -57,9 +57,6 @@ logs
 *.onnx
 *.weights
 
-# nndeploy-app (separate service)
-nndeploy-app
-
 # Cache
 .pytest_cache
 .ruff_cache

@@ -262,10 +262,11 @@ function applyProjectTools(taskType) {
         pose: ['pose'],
         classify: ['classify'],
         move: ['detect', 'segment', 'obb', 'pose', 'classify'],
+        select: ['detect', 'segment', 'obb', 'pose', 'classify'],
         smart: ['detect', 'segment', 'obb', 'pose'],
     };
-    const toolIds = ['smartTool', 'rectTool', 'polygonTool', 'obbTool', 'poseTool', 'classifyTool', 'moveTool'];
-    const toolKeys = ['smart', 'rect', 'polygon', 'obb', 'pose', 'classify', 'move'];
+    const toolIds = ['selectTool', 'smartTool', 'rectTool', 'polygonTool', 'obbTool', 'poseTool', 'classifyTool', 'moveTool'];
+    const toolKeys = ['select', 'smart', 'rect', 'polygon', 'obb', 'pose', 'classify', 'move'];
     let firstVisibleTool = null;
 
     toolIds.forEach((id, idx) => {
@@ -322,12 +323,14 @@ function setupEventListeners() {
     document.getElementById('imageSearch').addEventListener('input', filterImages);
     
     // 工具按钮
+    const selectTool = document.getElementById('selectTool');
     const rectTool = document.getElementById('rectTool');
     const polygonTool = document.getElementById('polygonTool');
     const obbTool = document.getElementById('obbTool');
     const poseTool = document.getElementById('poseTool');
     const classifyTool = document.getElementById('classifyTool');
     const moveTool = document.getElementById('moveTool');
+    if (selectTool) selectTool.addEventListener('click', () => switchTool('select'));
     if (rectTool) rectTool.addEventListener('click', () => switchTool('rect'));
     if (polygonTool) polygonTool.addEventListener('click', () => switchTool('polygon'));
     if (obbTool) obbTool.addEventListener('click', () => switchTool('obb'));
@@ -488,7 +491,7 @@ function switchTool(tool) {
     const canvas = document.getElementById('imageCanvas');
     if (tool === 'move') {
         canvas.style.cursor = 'grab';
-    } else if (tool === 'classify') {
+    } else if (tool === 'classify' || tool === 'select') {
         canvas.style.cursor = 'pointer';
     } else {
         canvas.style.cursor = 'crosshair';
@@ -640,35 +643,40 @@ function handleMouseDown(e) {
         return;
     }
 
-    // 检查是否点击了某个标注的控制点
-    const resizeResult = checkResizeHandleClick(canvasX, canvasY, displayRatio, imgX, imgY);
-    if (resizeResult) {
-        pushUndoState();
-        isResizing = true;
-        resizeHandle = resizeResult.handle;
-        selectedAnnotationId = resizeResult.annotationId;
-        lastMousePos = {x: e.clientX, y: e.clientY};
+    // 绘制工具（rect/obb/polygon/pose）跳过选中检测，直接开始绘制
+    const isDrawingTool = currentTool === 'rect' || currentTool === 'obb' || currentTool === 'polygon' || currentTool === 'pose';
+
+    if (!isDrawingTool) {
+        // 检查是否点击了某个标注的控制点
+        const resizeResult = checkResizeHandleClick(canvasX, canvasY, displayRatio, imgX, imgY);
+        if (resizeResult) {
+            pushUndoState();
+            isResizing = true;
+            resizeHandle = resizeResult.handle;
+            selectedAnnotationId = resizeResult.annotationId;
+            lastMousePos = {x: e.clientX, y: e.clientY};
+            updateAnnotationListDebounced();
+            redrawCanvas();
+            return;
+        }
+
+        // 检查是否点击了某个标注
+        const annotationResult = checkAnnotationClick(canvasX, canvasY, displayRatio, imgX, imgY);
+        if (annotationResult) {
+            pushUndoState();
+            selectedAnnotationId = annotationResult.id;
+            isMoving = true;
+            lastMousePos = {x: e.clientX, y: e.clientY};
+            updateAnnotationListDebounced();
+            redrawCanvas();
+            return;
+        }
+
+        // 如果点击了空白区域
+        selectedAnnotationId = null;
         updateAnnotationListDebounced();
         redrawCanvas();
-        return;
     }
-
-    // 检查是否点击了某个标注
-    const annotationResult = checkAnnotationClick(canvasX, canvasY, displayRatio, imgX, imgY);
-    if (annotationResult) {
-        pushUndoState();
-        selectedAnnotationId = annotationResult.id;
-        isMoving = true;
-        lastMousePos = {x: e.clientX, y: e.clientY};
-        updateAnnotationListDebounced();
-        redrawCanvas();
-        return;
-    }
-
-    // 如果点击了空白区域
-    selectedAnnotationId = null;
-    updateAnnotationListDebounced();
-    redrawCanvas();
 
     // 移动工具点击空白区域时开始平移图片
     if (currentTool === 'move') {
@@ -3057,6 +3065,147 @@ function handleDrop(e) {
     });
 }
 
+// ===== SAM2 模型管理 =====
+
+// 刷新 SAM2 模型状态
+function refreshSamModels() {
+    const modelsList = document.getElementById('samModelsList');
+    if (!modelsList) return;
+
+    modelsList.innerHTML = '<span style="color: #999;"><i class="fas fa-spinner fa-spin"></i> 加载中...</span>';
+
+    fetch('/api/sam/check-models')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success || !data.models) {
+                modelsList.innerHTML = '<span style="color: #999;">加载失败</span>';
+                return;
+            }
+            // 更新模型列表
+            let html = '';
+            data.models.forEach(m => {
+                const statusIcon = m.available ? '✅' : '❌';
+                const statusText = m.available ? '已安装' : '未安装';
+                html += `<div style="padding: 4px 0;">${statusIcon} ${m.checkpoint} <span style="color: #888; font-size: 0.85em;">(${statusText})</span></div>`;
+            });
+            modelsList.innerHTML = html || '<span style="color: #999;">暂无模型信息</span>';
+
+            // 更新复选框
+            const container = document.getElementById('samModelsCheckboxContainer');
+            if (container) {
+                container.innerHTML = '';
+                data.models.forEach(m => {
+                    const label = document.createElement('label');
+                    label.style.cssText = 'display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa; font-size: 0.9em;';
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.name = 'samModels';
+                    cb.value = m.id;
+                    // 默认勾选未安装的模型
+                    if (!m.available) cb.checked = true;
+                    const statusText = m.available ? '✅ 已安装' : '⬜ 未下载';
+                    label.appendChild(cb);
+                    label.appendChild(document.createTextNode(` ${m.name}（约 ${m.size_mb}MB）${statusText}`));
+                    container.appendChild(label);
+                });
+            }
+        })
+        .catch(err => {
+            modelsList.innerHTML = `<span style="color: #999;">加载失败: ${err.message}</span>`;
+        });
+}
+
+// 下载 SAM2 模型
+function downloadSamModels() {
+    const selectedModels = Array.from(document.querySelectorAll('input[name="samModels"]:checked'))
+        .map(cb => cb.value);
+
+    if (selectedModels.length === 0) {
+        showToast('请至少选择一个模型');
+        return;
+    }
+
+    const statusElement = document.getElementById('samDownloadStatus');
+    const statusText = document.getElementById('samStatusText');
+    const progressElement = document.getElementById('samDownloadProgress');
+    const progressBar = document.getElementById('samProgressBar');
+    const progressPercent = document.getElementById('samProgressPercent');
+    const progressLabel = document.getElementById('samProgressLabel');
+
+    statusElement.style.display = 'block';
+    statusText.textContent = '正在下载: ' + selectedModels.join(', ');
+    progressElement.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressPercent.textContent = '0%';
+
+    // 禁用按钮
+    const downloadBtn = document.getElementById('downloadSamModelsBtn');
+    const refreshBtn = document.getElementById('refreshSamModelsBtn');
+    downloadBtn.disabled = true;
+    refreshBtn.disabled = true;
+
+    // SSE 下载
+    const eventSource = new EventSource('/api/sam/download-models?models=' + selectedModels.join(','));
+
+    eventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+
+            // 更新进度
+            if (data.progress !== undefined) {
+                progressBar.style.width = data.progress + '%';
+                progressPercent.textContent = data.progress + '%';
+            }
+
+            // 更新下载详情
+            if (data.downloaded_mb !== undefined && data.total_mb !== undefined) {
+                progressLabel.textContent = `正在下载 ${data.model}: ${data.downloaded_mb}MB / ${data.total_mb}MB`;
+            } else if (data.message) {
+                statusText.textContent = data.message;
+                progressLabel.textContent = data.message;
+            }
+
+            // 下载完成
+            if (data.status === 'completed') {
+                eventSource.close();
+                statusText.textContent = '✅ ' + (data.message || '所有 SAM2 模型下载完成');
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                // 刷新模型状态
+                refreshSamModels();
+                // 恢复按钮
+                downloadBtn.disabled = false;
+                refreshBtn.disabled = false;
+                setTimeout(() => {
+                    statusElement.style.display = 'none';
+                    progressElement.style.display = 'none';
+                }, 5000);
+            }
+
+            // 下载失败
+            if (data.status === 'error') {
+                eventSource.close();
+                statusText.textContent = '❌ ' + (data.message || '下载失败');
+                downloadBtn.disabled = false;
+                refreshBtn.disabled = false;
+                setTimeout(() => {
+                    statusElement.style.display = 'none';
+                    progressElement.style.display = 'none';
+                }, 8000);
+            }
+        } catch (error) {
+            console.error('解析 SAM 下载进度失败:', error);
+        }
+    };
+
+    eventSource.onerror = function() {
+        eventSource.close();
+        statusText.textContent = '❌ 下载连接中断';
+        downloadBtn.disabled = false;
+        refreshBtn.disabled = false;
+    };
+}
+
 // 显示设置模态框
 function showSettingsModal() {
     document.getElementById('settingsModal').style.display = 'block';
@@ -3252,6 +3401,16 @@ function handleKeyDown(e) {
             switchTool('rect');
             return;
         }
+    }
+
+    // 选择工具：Esc 取消选中当前标注
+    if (e.key === 'Escape' && selectedAnnotationId !== null) {
+        e.preventDefault();
+        selectedAnnotationId = null;
+        updateAnnotationListDebounced();
+        redrawCanvas();
+        showToast('已取消选择');
+        return;
     }
 
     // 撤销 (Ctrl+Z)

@@ -1,0 +1,132 @@
+{
+  "last_node_id": 3,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 3,
+      "type": "xclabel/output",
+      "pos": [
+        590,
+        140
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "link": 2,
+          "name": "in",
+          "type": "any"
+        }
+      ],
+      "outputs": [],
+      "title": "输出预览 [0ms] [0ms] [0ms]",
+      "properties": {},
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 1,
+      "type": "xclabel/input",
+      "pos": [
+        50,
+        150
+      ],
+      "size": [
+        160,
+        70
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "links": [
+            1
+          ],
+          "name": "image",
+          "type": "image"
+        }
+      ],
+      "title": "输入图片 [0ms] [0ms] [0ms]",
+      "properties": {
+        "input_type": "url",
+        "url": "https://free.boltp.com/2026/06/29/6a42116caa1e2.webp"
+      },
+      "widgets_values": [
+        "url"
+      ],
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 2,
+      "type": "xclabel/yolo",
+      "pos": [
+        320,
+        129
+      ],
+      "size": {
+        "0": 160,
+        "1": 120
+      },
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "link": 1,
+          "name": "image",
+          "type": "image"
+        }
+      ],
+      "outputs": [
+        {
+          "links": [
+            2
+          ],
+          "name": "detections",
+          "type": "array"
+        }
+      ],
+      "title": "YOLO 检测",
+      "properties": {
+        "model": "sv30_seg/20260618_172731",
+        "task": "segment",
+        "conf": 0.25,
+        "iou": 0.5
+      },
+      "widgets_values": [
+        "segment",
+        0.25,
+        0.5
+      ],
+      "boxcolor": "#e74c3c"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "image"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      0,
+      "array"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}

@@ -1,0 +1,32 @@
+version: '1.0'
+name: my_pipeline
+pipeline:
+- id: '3'
+  type: output
+  source:
+  - '2'
+- id: '1'
+  type: input
+  input_type: upload
+- id: '5'
+  type: output
+  source:
+  - '4'
+- id: '2'
+  type: yolo
+  model: sv30_seg/20260618_172731
+  task: segment
+  params:
+    conf: 0.25
+    iou: 0.5
+  source:
+  - '1'
+- id: '4'
+  type: yolo
+  model: ocr_table/20260625_162438
+  task: segment
+  params:
+    conf: 0.25
+    iou: 0.5
+  source:
+  - '1'

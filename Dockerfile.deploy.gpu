@@ -29,6 +29,7 @@ RUN python3.12 -m pip install --no-cache-dir -r requirements.txt -i https://pypi
 
 # Copy service code
 COPY deploy/*.py ./
+COPY deploy/static ./static
 
 # Create cache directory
 RUN mkdir -p /app/cache/models /app/cache/workflows

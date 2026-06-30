@@ -1,0 +1,18 @@
+version: '1.0'
+name: yolo-detect-preview
+pipeline:
+- id: '3'
+  type: output
+  source:
+  - '2'
+- id: '1'
+  type: input
+  input_type: url
+  url: https://free.boltp.com/2026/06/29/6a42116caa1e2.webp
+- id: '2'
+  type: yolo
+  model: sv30_seg/20260618_172731
+  task: segment
+  params:
+    conf: 0.25
+    iou: 0.5

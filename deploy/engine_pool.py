@@ -10,7 +10,7 @@ class Engine:
     engine_id: str
     engine_type: str  # "model" or "workflow"
     project_id: str
-    engine: Any  # nndeploy model or pipeline instance
+    engine: Any  # ML model or pipeline instance
     metadata: Dict[str, Any] = field(default_factory=dict)
     loaded_at: float = field(default_factory=time.time)
     last_used_at: float = field(default_factory=time.time)
@@ -72,6 +72,11 @@ class EnginePool:
                     "loaded_at": e.loaded_at,
                     "last_used_at": e.last_used_at,
                     "inference_count": e.inference_count,
+                    "metadata": {
+                        k: v for k, v in e.metadata.items()
+                        if k in ("classes", "task_type", "num_classes", "onnx_path",
+                                "model_file", "inference_backend")
+                    },
                 }
                 for e in self._engines.values()
             ]
@@ -84,7 +89,7 @@ class EnginePool:
         await self._release_engine(engine)
 
     async def _release_engine(self, engine: Engine):
-        # Release nndeploy resources
+        # Release model resources
         try:
             if hasattr(engine.engine, "release"):
                 engine.engine.release()

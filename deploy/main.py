@@ -96,6 +96,14 @@ class LoadWorkflowFileRequest(BaseModel):
     workflow_path: str
 
 
+class WorkflowExecuteRequest(BaseModel):
+    workflow: str = Field(default="custom", description="Workflow name")
+    server_url: Optional[str] = Field(default=None, description="Main server URL to download workflow YAML from")
+    yaml_content: Optional[str] = Field(default=None, description="Raw YAML content (alternative to server_url)")
+    image: Optional[str] = None
+    image_url: Optional[str] = None
+
+
 @app.get("/health")
 async def health():
     return {
@@ -367,6 +375,105 @@ async def pipeline_unload(req: UnloadPipelineRequest):
 async def list_pipelines():
     """List loaded pipelines."""
     return {"pipelines": list(pipeline_store._managers.keys()), "total": len(pipeline_store)}
+
+
+@app.post("/v1/workflow/execute")
+async def v1_workflow_execute(req: WorkflowExecuteRequest):
+    """One-step workflow execution: download YAML, load pipeline, auto-load models, run."""
+    if not req.workflow:
+        raise HTTPException(status_code=400, detail="workflow name is required")
+    if not req.image and not req.image_url:
+        raise HTTPException(status_code=400, detail="Either image or image_url must be provided")
+    # 1. Get YAML content: from yaml_content param, or download from server
+    if req.yaml_content:
+        yaml_content = req.yaml_content
+    elif req.server_url:
+        try:
+            yaml_resp = requests.get(
+                f"{req.server_url.rstrip('/')}/api/wf/yaml",
+                params={"name": req.workflow},
+                timeout=30,
+            )
+            yaml_resp.raise_for_status()
+            yaml_content = yaml_resp.text
+        except requests.RequestException as e:
+            raise HTTPException(status_code=502, detail=f"Failed to download workflow from server: {str(e)}")
+    else:
+        raise HTTPException(status_code=400, detail="Either server_url or yaml_content must be provided")
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, dir=CACHE_DIR)
+    try:
+        tmp.write(yaml_content)
+        tmp.close()
+
+        # 2. Load pipeline
+        mgr = PipelineManager(tmp.name)
+        workflow_id = mgr.config.name
+
+        # 3. Auto-load YOLO models
+        for node in mgr.config.pipeline:
+            if node.type.value == 'yolo' and node.model:
+                existing = await engine_pool.get(node.model)
+                if existing and existing.engine is not None:
+                    continue
+                parts = node.model.split('/', 1)
+                if len(parts) != 2:
+                    continue
+                p_name, p_version = parts
+                try:
+                    from server_client import ServerClient
+                    client = ServerClient(req.server_url)
+                    model_dir = client.download_model(p_name, p_version, cache_dir=CACHE_DIR)
+                    model_file = None
+                    for ext in ('.engine', '.pt', '.onnx'):
+                        for f in os.listdir(model_dir):
+                            if f.endswith(ext):
+                                model_file = os.path.join(model_dir, f)
+                                break
+                        if model_file:
+                            break
+                    if not model_file:
+                        print(f'[warn] No model file found for {node.model}')
+                        continue
+                    loaded = yolo_adapter.load_model(model_file)
+                    eng = Engine(
+                        engine_id=node.model,
+                        engine_type="model",
+                        project_id=p_name,
+                        engine=loaded,
+                        metadata={"task_type": node.task or "detect", "model_file": model_file},
+                    )
+                    await engine_pool.add(eng)
+                    print(f'[deploy] Loaded model {node.model}')
+                except Exception as load_err:
+                    print(f'[deploy] Failed to load model {node.model}: {load_err}')
+                    continue
+
+        # 4. Prepare image
+        if req.image:
+            image = io.BytesIO(base64.b64decode(req.image))
+        else:
+            resp = requests.get(req.image_url, timeout=30)
+            resp.raise_for_status()
+            image = io.BytesIO(resp.content)
+
+        # 5. Execute pipeline
+        start_time = time.time()
+        result = await mgr.execute(
+            image=image,
+            engine_pool=engine_pool,
+            yolo_adapter=yolo_adapter,
+            vllm_client=vllm_client,
+        )
+        result["workflow_id"] = workflow_id
+        result["execution_time_ms"] = round((time.time() - start_time) * 1000, 2)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Workflow execution failed: {str(e)}")
+    finally:
+        os.unlink(tmp.name)
 
 
 if __name__ == "__main__":

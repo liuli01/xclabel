@@ -62,10 +62,19 @@ text-align:center;transition:all .15s;user-select:none
 
 /* ── Sidebar: property panel ── */
 .props-sidebar{
-width:0;background:#16213e;border-left:1px solid #0f3460;
+width:270px;background:#16213e;border-left:1px solid #0f3460;
 overflow:hidden;transition:width .2s;flex-shrink:0;display:flex;flex-direction:column
 }
-.props-sidebar.open{width:270px;overflow-y:auto}
+.props-sidebar.collapsed{width:0;border-left:none;overflow:hidden !important}
+.props-sidebar:not(.collapsed){overflow-y:auto}
+.toggle-btn{
+position:absolute;right:0;top:12px;width:18px;height:28px;background:#16213e;
+border:1px solid #0f3460;border-right:none;border-radius:4px 0 0 4px;
+cursor:pointer;display:none;align-items:center;justify-content:center;
+color:#888;font-size:11px;transition:color .15s;z-index:100
+}
+.toggle-btn:hover{color:#e94560}
+.props-sidebar{position:relative}
 .props-sidebar h3{padding:10px 12px;font-size:.82em;color:#e94560;border-bottom:1px solid #0f3460;flex-shrink:0;display:flex;align-items:center;gap:6px}
 .props-sidebar .field{padding:7px 12px}
 .props-sidebar label{display:block;font-size:.74em;color:#aaa;margin-bottom:2px}
@@ -118,9 +127,23 @@ transition:height .25s;flex-shrink:0;font-family:Consolas,'Courier New',monospac
 /* ── Image preview ── */
 .img-preview{display:flex;gap:12px;margin:8px 0;flex-wrap:wrap}
 .img-preview .frame{flex:1;min-width:200px;background:#0d1b2a;border:1px solid #1b3a5c;border-radius:4px;padding:6px;text-align:center}
-.img-preview .frame img{max-width:100%;max-height:200px;border-radius:3px;cursor:pointer}
-.img-preview .frame img:hover{max-height:400px;transition:max-height .2s}
+.img-preview .frame img{max-width:100%;max-height:200px;border-radius:3px;cursor:zoom-in;transition:opacity .2s}
+.img-preview .frame img:hover{opacity:.85}
 .img-preview .frame .label{font-size:.7em;color:#888;margin-top:4px}
+.img-preview .frame .output-previews{display:flex;flex-direction:column;gap:6px}
+.img-preview .frame .output-previews img{max-width:100%;max-height:200px;border-radius:3px;cursor:zoom-in;transition:opacity .2s;display:block}
+
+/* ── Image zoom lightbox ── */
+.zoom-overlay{display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.85);cursor:zoom-out;user-select:none;touch-action:none}
+.zoom-overlay.open{display:flex;align-items:center;justify-content:center}
+.zoom-overlay .zoom-img{max-width:90vw;max-height:90vh;object-fit:contain;border-radius:4px;box-shadow:0 8px 40px rgba(0,0,0,.6);cursor:grab;transition:transform .1s ease;image-rendering:auto}
+.zoom-overlay .zoom-img.dragging{cursor:grabbing;transition:none}
+.zoom-overlay .zoom-toolbar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:8px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);padding:8px 14px;border-radius:8px;z-index:100000}
+.zoom-overlay .zoom-toolbar button{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:5px 12px;cursor:pointer;font-size:14px;transition:all .15s;font-family:inherit}
+.zoom-overlay .zoom-toolbar button:hover{background:rgba(255,255,255,.25)}
+.zoom-overlay .zoom-toolbar .zoom-level{color:rgba(255,255,255,.7);font-size:13px;padding:5px 6px;min-width:50px;text-align:center}
+.zoom-overlay .zoom-close{position:fixed;top:16px;right:20px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:22px;cursor:pointer;z-index:100000;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.zoom-overlay .zoom-close:hover{background:rgba(233,69,96,.7)}
 
 /* ── Detection table ── */
 .det-table{width:100%;border-collapse:collapse;margin:6px 0;font-size:.74em}
@@ -158,7 +181,7 @@ transition:height .25s;flex-shrink:0;font-family:Consolas,'Courier New',monospac
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Live mode badge ── */
-.editor-area{position:relative;flex:1;min-width:0}
+.editor-area{position:relative;flex:1;min-width:0;overflow:hidden}
 
 /* ── Props sidebar tabs ── */
 .props-tabs{display:flex;border-bottom:1px solid #0f3460;flex-shrink:0}
@@ -200,8 +223,10 @@ transition:height .25s;flex-shrink:0;font-family:Consolas,'Courier New',monospac
 
 <!-- Run modal -->
 <div class="modal-overlay" id="runModal">
-<div class="modal-box">
-<h3><i class="fas fa-bug" style="margin-right:6px"></i>运行调试</h3>
+<div class="modal-box" style="position:relative">
+<h3><i class="fas fa-bug" style="margin-right:6px"></i>运行调试
+<span onclick="closeRunModal()" style="position:absolute;right:14px;top:14px;cursor:pointer;color:#888;font-size:18px;line-height:1;transition:color .15s" onmouseover="this.style.color='#e94560'" onmouseout="this.style.color='#888'">&times;</span>
+</h3>
 <div id="runInputSection">
 <div class="field" id="runFileField"><label>选择图片</label><input type="file" id="runImageInput" accept="image/*" onchange="handleRunImage(this)">
 <div style="font-size:.76em;color:#888;margin-top:4px" id="runImageName">未选择</div></div>
@@ -225,16 +250,33 @@ transition:height .25s;flex-shrink:0;font-family:Consolas,'Courier New',monospac
 <div class="debug-log" id="runLog"><div class="log-placeholder">点击「执行」查看调试日志</div></div>
 <div class="img-preview" id="imgPreview" style="display:none">
 <div class="frame" id="inputFrame"><img id="inputImg"><div class="label">📥 输入图片</div></div>
-<div class="frame" id="outputFrame"><img id="outputImg"><div class="label">🎯 检测结果</div></div>
+<div class="frame" id="outputFrame"><div class="output-previews" id="outputPreviews"></div><div class="label">🎯 检测结果</div></div>
 </div>
 	<div class="result-box" id="runResult"></div>
 </div>
+</div>
+
+<!-- Image zoom lightbox -->
+<div class="zoom-overlay" id="zoomOverlay" onclick="closeZoom(event)">
+  <button class="zoom-close" onclick="closeZoom()">&times;</button>
+  <img class="zoom-img" id="zoomImg" draggable="false">
+  <div class="zoom-toolbar">
+    <button onclick="zoomAdjust(-0.25)" title="缩小"><i class="fas fa-search-minus"></i></button>
+    <span class="zoom-level" id="zoomLevel">100%</span>
+    <button onclick="zoomAdjust(0.25)" title="放大"><i class="fas fa-search-plus"></i></button>
+    <button onclick="zoomReset()" title="重置">⟲</button>
+  </div>
 </div>
 
 <script>
 // ── Globals ──
 var graph, graphcanvas, selectedNode = null;
 var runImageData = null;
+
+// ── Zoom state ──
+var zoomScale = 1, zoomMin = 0.25, zoomMax = 8;
+var zoomPosX = 0, zoomPosY = 0;
+var zoomDragging = false, zoomDragStartX, zoomDragStartY, zoomDragImgX, zoomDragImgY;
 
 // ── Custom Node Types ──
 
@@ -246,6 +288,7 @@ task: 'segment',
 conf: 0.25,
 iou: 0.5
 };
+this.addInput('image', 'image');
 this.addOutput('detections', 'array');
 this.addWidget('combo', 'task', this.properties.task, function(v){ this.properties.task = v; }, { values: ['detect', 'segment', 'pose'] });
 this.addWidget('slider', 'conf', this.properties.conf, function(v){ this.properties.conf = v; }, { min: 0, max: 1, step: 0.05 });
@@ -257,6 +300,7 @@ YoloNode.title = 'YOLO';
 YoloNode.desc = 'Ultralytics YOLO 检测/分割/姿态';
 YoloNode.prototype.onNodeSelected = function(){ showProperties(this); };
 YoloNode.prototype.onDeselected = function(){ hideProperties(); };
+YoloNode.prototype.size = [200, 100];
 
 // Condition Node
 function ConditionNode(){
@@ -276,6 +320,7 @@ ConditionNode.prototype.onDeselected = function(){ hideProperties(); };
 function VllmNode(){
 this.properties = {
 api_url: 'http://localhost:8000/v1',
+api_key: '',
 model_name: 'qwen-vl-chat',
 prompt: '分析图片中的目标区域',
 condition: '',
@@ -283,6 +328,7 @@ extract_roi: true,
 temperature: 0.1,
 max_tokens: 256
 };
+this.addInput('image', 'image');
 this.addInput('trigger', 'boolean');
 this.addOutput('result', 'string');
 this.size = this.computeSize();
@@ -295,8 +341,8 @@ VllmNode.prototype.onDeselected = function(){ hideProperties(); };
 // Output Node
 function OutputNode(){
 this.properties = {};
-this.addInput('in', 'any');
-this.size = this.computeSize();
+this.addInput('in', '*');
+this.size = [240, 200];
 }
 OutputNode.title = 'Output';
 OutputNode.desc = '输出合并';
@@ -310,9 +356,12 @@ input_type: 'upload',
 url: '',
 };
 this.addOutput('image', 'image');
-this.addWidget('combo', 'type', this.properties.input_type, function(v){ this.properties.input_type = v; }, { values: ['upload', 'url', 'stream'] });
+this.addWidget('combo', 'type', this.properties.input_type, function(v){
+this.properties.input_type = v;
+if(selectedNode === this) showProperties(this);
+}, { values: ['upload', 'url', 'stream'] });
 this.serialize_widgets = true;
-this.size = this.computeSize();
+this.size = [240, 200];
 }
 InputNode.title = 'Input';
 InputNode.desc = '数据输入（上传 / URL / 视频流）';
@@ -354,14 +403,19 @@ graphcanvas = new LGraphCanvas(canvasEl, graph);
 graphcanvas.live_mode = false;
 
 // Node selection handling
-graphcanvas.onNodeMousedown = function(e, node, slot, event){
+// Canvas node click → show properties and switch to props tab
+// Use onMouseDown so it fires for ALL clicks (title, body, slots)
+graphcanvas.onMouseDown = function(e){
+var node = this.graph ? this.graph.getNodeOnPos(e.canvasX, e.canvasY, null, null) : null;
+if(node){
 showProperties(node);
 scrollToResultNode(node.id);
+switchPropsTab('props');
+}
 };
-graphcanvas.onNodeDblClick = function(e, node){
-showProperties(node);
-scrollToResultNode(node.id);
-};
+
+// Suppress the default LiteGraph property panel (we use our own showProperties)
+graphcanvas.showNodePanel = function(){};
 
 // File drop handling (same as LiteGraph.Editor)
 graphcanvas.onDropItem = function(e){
@@ -455,8 +509,16 @@ var tabBar = document.createElement('div');
 tabBar.className = 'props-tabs';
 tabBar.innerHTML =
   '<div class="props-tab active" data-tab="props" onclick="switchPropsTab(\'props\')"><i class="fas fa-sliders-h"></i> 属性</div>' +
-  '<div class="props-tab" data-tab="result" onclick="switchPropsTab(\'result\')"><i class="fas fa-chart-bar"></i> 运行结果</div>';
+  '<div class="props-tab" data-tab="result" onclick="switchPropsTab(\'result\')"><i class="fas fa-chart-bar"></i> 运行结果</div>' +
+  '<div class="props-tab" onclick="toggleSidebar()" title="收起侧栏" style="margin-left:auto;cursor:pointer;padding:8px 10px;flex-shrink:0"><i class="fas fa-chevron-right"></i></div>';
 propsPanel.appendChild(tabBar);
+
+// Properties content header
+var propsTitle = document.createElement('div');
+propsTitle.id = 'propsTitle';
+propsTitle.style.cssText = 'padding:8px 12px;font-size:.82em;color:#e94560;display:flex;align-items:center;gap:6px;border-bottom:1px solid #0f3460;flex-shrink:0';
+propsTitle.innerHTML = '<i class="fas fa-sliders-h"></i> 属性';
+propsPanel.appendChild(propsTitle);
 
 // Properties content
 var propsContent = document.createElement('div');
@@ -472,6 +534,16 @@ resultPanel.innerHTML = '<div class="result-empty">尚未执行工作流</div>';
 propsPanel.appendChild(resultPanel);
 
 content.appendChild(propsPanel);
+
+// Toggle button (visible when sidebar is collapsed) — outside sidebar to avoid overflow:hidden clipping
+var toggleBtn = document.createElement('div');
+toggleBtn.className = 'toggle-btn';
+toggleBtn.id = 'sidebarToggleBtn';
+toggleBtn.innerHTML = '▶';
+toggleBtn.title = '展开侧栏';
+toggleBtn.onclick = function(){ toggleSidebar(); };
+toggleBtn.style.display = 'none';
+content.appendChild(toggleBtn);
 
 // ── Inject YAML panel (at bottom, before footer) ──
 var yamlPanel = document.createElement('div');
@@ -514,14 +586,12 @@ graphcanvas.resize();
 function showProperties(node){
 if(!node) return;
 selectedNode = node;
-var panel = document.getElementById('propsSidebar');
 var title = document.getElementById('propsTitle');
 var content = document.getElementById('propsContent');
-panel.classList.add('open');
 title.innerHTML = '<i class="fas fa-sliders-h"></i> ' + (node.title || '节点');
 
 var p = node.properties || {};
-var html = '';
+var html = '<div class="field"><label>ID</label><input type="text" value="'+(node.id||'')+'" readonly style="background:#0a1628;color:#888;border-color:#1b3a5c;cursor:default;font-size:.8em;padding:3px 5px;border-radius:3px;width:100%"></div>';
 var type = node.type;
 
 if(type === 'xclabel/input' || type === 'input'){
@@ -547,6 +617,7 @@ html += fieldHtml('text', 'expression', p.expression || 'max_conf > 0.5', 'max_c
 }
 else if(type === 'xclabel/vllm' || type === 'vllm'){
 html += fieldHtml('text', 'api_url', p.api_url || 'http://localhost:8000/v1');
+html += fieldHtml('text', 'api_key', p.api_key || '', 'sk-...');
 html += fieldHtml('text', 'model_name', p.model_name || 'qwen-vl-chat');
 html += '<div class="field"><label>prompt</label><textarea onchange="setProp(\'prompt\',this.value)">'+(p.prompt||'')+'</textarea></div>';
 html += fieldHtml('text', 'condition', p.condition || '', '条件节点 ID');
@@ -574,20 +645,34 @@ return '<div class="field"><label>'+key+'</label><input '+attrs+' value="'+Strin
 }
 
 function hideProperties(){
-document.getElementById('propsSidebar').classList.remove('open');
 selectedNode = null;
+// Don't close sidebar — it stays open persistently
+}
+
+// ── Sidebar toggle ──
+function toggleSidebar(){
+  var side = document.getElementById('propsSidebar');
+  var btn = document.getElementById('sidebarToggleBtn');
+  var isCollapsed = side.classList.toggle('collapsed');
+  if(btn) btn.style.display = isCollapsed ? 'flex' : 'none';
+  // Change toggle icon direction
+  var toggleIcon = side.querySelector('.props-tab:last-child i');
+  if(toggleIcon) toggleIcon.className = isCollapsed ? 'fas fa-chevron-left' : 'fas fa-chevron-right';
+  setTimeout(function(){ if(graphcanvas) graphcanvas.resize(); }, 80);
 }
 
 // ── Result panel / Props tab switching ──
 var lastRunResult = null;
 
 function switchPropsTab(tab){
-  document.querySelectorAll('.props-tab').forEach(function(t){
+  document.querySelectorAll('.props-tab[data-tab]').forEach(function(t){
     t.classList.toggle('active', t.dataset.tab === tab);
   });
   document.getElementById('propsContent').style.display = (tab === 'props') ? 'block' : 'none';
   document.getElementById('resultPanel').classList.toggle('open', tab === 'result');
-  document.getElementById('propsSidebar').classList.add('open');
+  // Ensure sidebar is open when switching tabs
+  var side = document.getElementById('propsSidebar');
+  if(side.classList.contains('collapsed')) toggleSidebar();
   if(tab === 'result' && lastRunResult){
     renderResultPanel(lastRunResult);
   }
@@ -641,8 +726,30 @@ function renderResultPanel(data){
     var typeIcon = typeIcons[ntype] || 'fa-circle';
 
     var detailHtml = '';
-    if(ntype === 'yolo' && out.annotated_image){
-      detailHtml += '<img src="data:image/jpeg;base64,'+out.annotated_image+'" onclick="this.style.maxHeight=this.style.maxHeight?\'\':\'none\'" title="点击缩放">';
+    if(ntype === 'input'){
+      var _inpSrc = document.getElementById('inputImg') ? document.getElementById('inputImg').src : '';
+      if(_inpSrc){
+        detailHtml += '<img src="'+_inpSrc+'" onclick="event.stopPropagation();openZoom(this.src)" title="点击放大" style="max-width:100%;max-height:180px;border-radius:3px;cursor:zoom-in;margin:4px 0">';
+      }
+    }
+    if(ntype === 'output'){
+      // Show annotated images from source nodes, not a global img element
+      var merged = out.merged || {};
+      var srcKeys = Object.keys(merged);
+      if(srcKeys.length){
+        srcKeys.forEach(function(srcId){
+          var srcData = merged[srcId];
+          if(srcData && srcData.annotated_image){
+            detailHtml += '<div style="color:#888;font-size:.85em;margin:2px 0">来自节点 '+srcId+'：</div>';
+            detailHtml += '<img src="data:image/jpeg;base64,'+srcData.annotated_image+'" onclick="event.stopPropagation();openZoom(this.src)" title="点击放大" style="max-width:100%;max-height:180px;border-radius:3px;cursor:zoom-in;margin:4px 0">';
+          } else {
+            detailHtml += '<div style="color:#888">节点 '+srcId+'：'+(srcData?'无标注图':'无数据')+'</div>';
+          }
+        });
+      }
+      if(!detailHtml.match(/<img\b/)){
+        detailHtml += '<div style="color:#888">合并上游节点输出</div>';
+      }
     }
     if(out.detections && out.detections.length){
       detailHtml += '<div style="color:#888;margin:4px 0">检测到 <b style="color:#e0e0e0">'+out.detections.length+'</b> 个目标</div>';
@@ -666,12 +773,10 @@ function renderResultPanel(data){
       var txt = out.vllm_result;
       detailHtml += '<div style="color:#e0e0e0;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow:hidden">'+(txt.length>200?txt.slice(0,200)+'...':txt)+'</div>';
       if(txt.length > 200){
-        detailHtml += '<div style="color:#6a9fb5;cursor:pointer;margin-top:2px" onclick="this.previousElementSibling.style.maxHeight=\'none\';this.style.display=\'none\'">展开全文 ▾</div>';
+        detailHtml += '<div style="color:#6a9fb5;cursor:pointer;margin-top:2px" onclick="event.stopPropagation();this.previousElementSibling.style.maxHeight=\'none\';this.style.display=\'none\'">展开全文 ▾</div>';
       }
     }
-    if(ntype === 'output'){
-      detailHtml += '<div style="color:#888">合并上游节点输出</div>';
-    }
+
 
     nodeHtml +=
       '<div class="result-node" data-node-id="'+nid+'" onclick="onResultNodeClick(this,\''+nid+'\')">' +
@@ -727,6 +832,17 @@ p[key] = parseFloat(value) || 0;
 p[key] = value === true || value === 'true';
 } else {
 p[key] = value;
+}
+// Sync widget value so node-body widgets reflect property-panel changes
+// Combo widget 'type' on InputNode maps to properties.input_type
+if(selectedNode.widgets){
+for(var wi=0; wi<selectedNode.widgets.length; wi++){
+var w = selectedNode.widgets[wi];
+if(w.name === key || (key === 'input_type' && w.name === 'type')){
+w.value = p[key];
+break;
+}
+}
 }
 graph.setDirtyCanvas(true);
 setStatus('已修改: ' + key, '#ffa726');
@@ -1092,12 +1208,10 @@ function resetNodeColors(){
   if(!graph || !graph._nodes) return;
   graph._nodes.forEach(function(n){
     n.boxcolor = null;
-    if(n._originalTitle){
-      n.title = n._originalTitle;
-      n._originalTitle = null;
-    }
+    // Strip previously appended status markers from title
+    if(n.title) n.title = n.title.replace(/ \[[\d.]+ms\]/g, '').replace(/ ❌/g, '').replace(/ ⏭/g, '');
   });
-  if(graphcanvas) graphcanvas.setDirtyCanvas(true);
+  if(graph) graph.setDirtyCanvas(true);
 }
 
 function executeWorkflow(){
@@ -1209,7 +1323,7 @@ addLog('⚠️ '+e, 'log-error');
 	      n.title = n._originalTitle + ' ⏭';
 	    }
 	  });
-	  graphcanvas.setDirtyCanvas(true);
+	  graph.setDirtyCanvas(true);
 	}
 
 	// Show image previews
@@ -1225,35 +1339,46 @@ addLog('⚠️ '+e, 'log-error');
 	document.getElementById('inputImg').src = inputUrl;
 	hasPreview = true;
 	addLog('🖼 输入图片: '+inputUrl, 'log-info');
+	} else if(runImageData){
+	document.getElementById('inputImg').src = 'data:image/jpeg;base64,'+runImageData;
+	hasPreview = true;
+	addLog('🖼 输入图片: 上传图片', 'log-info');
 	}
 
-	// Annotated output image
+	// Annotated output images (one per YOLO node)
 	var nodeOutputs = data.node_outputs || {};
+	var previewContainer = document.getElementById('outputPreviews');
+	if(previewContainer) previewContainer.innerHTML = '';
 	for(var nid in nodeOutputs){
 	var out = nodeOutputs[nid];
 	if(out && out.annotated_image){
-	document.getElementById('outputImg').src = 'data:image/jpeg;base64,'+out.annotated_image;
+	if(previewContainer){
+	var img = document.createElement('img');
+	img.src = 'data:image/jpeg;base64,'+out.annotated_image;
+	img.onclick = function(){ openZoom(this.src); };
+	img.title = '节点 '+nid+' 检测结果 - 点击放大';
+	previewContainer.appendChild(img);
+	}
 	hasPreview = true;
-	break;
 	}
 	}
 
-	// Detection info
-	var yoloNode = null;
+	// Detection info - iterate all YOLO nodes
 	for(var nid in nodeOutputs){
 	var info = graphInfo[nid] || {};
 	if(info.type === 'yolo'){
-	yoloNode = nodeOutputs[nid];
-	break;
-	}
-	}
-	if(yoloNode && yoloNode.detections && yoloNode.detections.length > 0){
-	var dets = yoloNode.detections;
-	addLog('🔍 检测到 <b>'+dets.length+'</b> 个目标', 'log-info');
+	var yoloOut = nodeOutputs[nid];
+	if(yoloOut && yoloOut.detections && yoloOut.detections.length > 0){
+	var dets = yoloOut.detections;
+	addLog('🔍 节点 '+nid+' 检测到 <b>'+dets.length+'</b> 个目标', 'log-info');
 	dets.slice(0, 10).forEach(function(d, i){
 	addLog('   #'+(i+1)+': '+d.class_name+' ('+d.confidence.toFixed(2)+')', 'log-ok');
 	});
 	if(dets.length > 10) addLog('   ... 还有 '+(dets.length-10)+' 个', 'log-info');
+	} else {
+	addLog('ℹ️ 节点 '+nid+' 未检测到目标', 'log-info');
+	}
+	}
 	}
 
 	if(previewEl) previewEl.style.display = hasPreview ? 'flex' : 'none';
@@ -1284,6 +1409,99 @@ dd.classList.remove('open');
 
 // ── Init on load ──
 initEditor();
+
+// ── Image zoom lightbox ──
+function openZoom(src){
+  var overlay = document.getElementById('zoomOverlay');
+  var img = document.getElementById('zoomImg');
+  if(!overlay || !img) return;
+  img.src = src;
+  overlay.classList.add('open');
+  zoomReset();
+  document.body.style.overflow = 'hidden';
+}
+
+function closeZoom(e){
+  if(e && e.target && e.target !== document.getElementById('zoomOverlay') && !e.target.classList.contains('zoom-close')){
+    return;
+  }
+  document.getElementById('zoomOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function zoomAdjust(delta){
+  var img = document.getElementById('zoomImg');
+  zoomScale = Math.min(zoomMax, Math.max(zoomMin, zoomScale + delta));
+  img.style.transform = 'translate('+zoomPosX+'px, '+zoomPosY+'px) scale('+zoomScale+')';
+  document.getElementById('zoomLevel').textContent = Math.round(zoomScale * 100) + '%';
+}
+
+function zoomReset(){
+  zoomScale = 1;
+  zoomPosX = 0;
+  zoomPosY = 0;
+  var img = document.getElementById('zoomImg');
+  img.style.transform = '';
+  img.style.transformOrigin = 'center center';
+  document.getElementById('zoomLevel').textContent = '100%';
+}
+
+// ── Zoom: mouse wheel ──
+document.addEventListener('wheel', function(e){
+  if(!document.getElementById('zoomOverlay').classList.contains('open')) return;
+  var img = document.getElementById('zoomImg');
+  if(!img) return;
+  e.preventDefault();
+  var delta = e.deltaY > 0 ? -0.15 : 0.15;
+  zoomScale = Math.min(zoomMax, Math.max(zoomMin, zoomScale + delta));
+  img.style.transform = 'translate('+zoomPosX+'px, '+zoomPosY+'px) scale('+zoomScale+')';
+  document.getElementById('zoomLevel').textContent = Math.round(zoomScale * 100) + '%';
+}, {passive: false});
+
+// ── Zoom: drag pan ──
+document.addEventListener('mousedown', function(e){
+  if(!document.getElementById('zoomOverlay').classList.contains('open')) return;
+  if(e.target.id !== 'zoomImg') return;
+  zoomDragging = true;
+  zoomDragStartX = e.clientX;
+  zoomDragStartY = e.clientY;
+  zoomDragImgX = zoomPosX;
+  zoomDragImgY = zoomPosY;
+  e.target.classList.add('dragging');
+  e.preventDefault();
+});
+document.addEventListener('mousemove', function(e){
+  if(!zoomDragging) return;
+  var dx = e.clientX - zoomDragStartX;
+  var dy = e.clientY - zoomDragStartY;
+  zoomPosX = zoomDragImgX + dx;
+  zoomPosY = zoomDragImgY + dy;
+  document.getElementById('zoomImg').style.transform =
+    'translate('+zoomPosX+'px, '+zoomPosY+'px) scale('+zoomScale+')';
+});
+document.addEventListener('mouseup', function(){
+  if(zoomDragging){
+    zoomDragging = false;
+    var img = document.getElementById('zoomImg');
+    if(img) img.classList.remove('dragging');
+  }
+});
+
+// ── Zoom: keyboard shortcuts ──
+document.addEventListener('keydown', function(e){
+  if(!document.getElementById('zoomOverlay').classList.contains('open')) return;
+  if(e.key === 'Escape'){ closeZoom(); return; }
+  if(e.key === '+' || e.key === '='){ zoomAdjust(0.25); e.preventDefault(); return; }
+  if(e.key === '-'){ zoomAdjust(-0.25); e.preventDefault(); return; }
+  if(e.key === '0'){ zoomReset(); e.preventDefault(); return; }
+});
+
+// ── Wire up existing preview images to open zoom on click ──
+// (result panel images are wired in renderResultPanel)
+document.getElementById('inputImg').addEventListener('click', function(){
+  if(this.src) openZoom(this.src);
+});
+// outputImg click handler removed — now handled by onclick on dynamically created images
 </script>
 </body>
 </html>

@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
-RUN uv add opencv-python-headless
+RUN uv pip install --force-reinstall opencv-python-headless
 
 # ============================================================
 # Stage 2: Runtime - GPU (CUDA runtime)
@@ -65,6 +65,7 @@ COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 
 COPY --chown=appuser:appgroup app.py .
 COPY --chown=appuser:appgroup AiUtils.py .
+COPY --chown=appuser:appgroup ai_manager.py .
 COPY --chown=appuser:appgroup templates/ ./templates/
 COPY --chown=appuser:appgroup static/ ./static/
 COPY --chown=appuser:appgroup plugins/ ./plugins/
@@ -99,20 +100,16 @@ COPY --chown=appuser:appgroup plugins/ ./plugins/
 RUN mkdir -p uploads static/annotations models \
     && chown -R appuser:appgroup /app uploads plugins static/annotations models
 
-# 下载 SAM 2 模型权重
+# 下载 SAM 2 YAML 配置文件（模型权重在运行时通过 Web UI 按需下载）
 RUN python3 <<'PYEOF'
 import os, urllib.request
 models_dir = '/app/models'
-files = {
-    'sam2_hiera_t.yaml': 'https://raw.githubusercontent.com/facebookresearch/sam2/main/sam2/configs/sam2/sam2_hiera_t.yaml',
-    'sam2_hiera_tiny.pt': 'https://dl.fbaipublicfiles.com/sam2/sam2_hiera_tiny.pt',
-}
-for name, url in files.items():
-    path = os.path.join(models_dir, name)
-    if not os.path.exists(path):
-        print(f'Downloading {name}...')
-        urllib.request.urlretrieve(url, path)
-        print(f'Downloaded {name}')
+url = 'https://raw.githubusercontent.com/facebookresearch/sam2/main/sam2/configs/sam2/sam2_hiera_t.yaml'
+path = os.path.join(models_dir, 'sam2_hiera_t.yaml')
+if not os.path.exists(path):
+    print(f'Downloading sam2_hiera_t.yaml...')
+    urllib.request.urlretrieve(url, path)
+    print('Downloaded sam2_hiera_t.yaml')
 PYEOF
 RUN chown -R appuser:appgroup /app/models
 

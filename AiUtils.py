@@ -24,7 +24,7 @@ logging.basicConfig(
 class AIAutoLabeler:
     """AI自动标注工具类，封装了与大模型API交互和视频处理的核心功能"""
 
-    def __init__(self, model_api_url: str, api_key: str = None, prompt: str = None, timeout: int = 30, inference_tool: str = "LMStudio", model: str = "qwen/qwen3-vl-8b"):
+    def __init__(self, model_api_url: str, api_key: str = None, prompt: str = None, timeout: int = 300, inference_tool: str = "LMStudio", model: str = "qwen/qwen3-vl-8b"):
         """初始化自动标注器
         
         Args:
@@ -544,12 +544,29 @@ class AIAutoLabeler:
                             result_json["detections"] = []
                         elif not isinstance(result_json["detections"], list):
                             result_json["detections"] = [result_json["detections"]]
+                    elif isinstance(result_json, list):
+                        # 兼容模型直接返回数组 [{label,confidence,bbox}, ...] 的情况
+                        result_json = {"detections": result_json}
                     else:
                         result_json = {"detections": []}
 
                     # 将检测到的坐标从缩放后的尺寸转换回原始图片尺寸
                     for detection in result_json["detections"]:
-                        if "bbox" in detection:
+                        # OBB 格式：points 4 角点（顺时针）
+                        if "points" in detection:
+                            pts = detection["points"]
+                            if len(pts) == 4:
+                                scaled = []
+                                for pt in pts:
+                                    x = int(float(pt[0]) * upscale)
+                                    y = int(float(pt[1]) * upscale)
+                                    # clamp 到图像边界
+                                    x = max(0, min(x, original_w - 1))
+                                    y = max(0, min(y, original_h - 1))
+                                    scaled.append([x, y])
+                                detection["points"] = scaled
+                        # 矩形框格式：bbox [x1,y1,x2,y2]
+                        elif "bbox" in detection:
                             bbox = detection["bbox"]
                             if len(bbox) == 4:
                                 x1, y1, x2, y2 = map(float, bbox)
@@ -598,6 +615,8 @@ class AIAutoLabeler:
         Returns:
             渲染后的图像路径
         """
+        import numpy as np
+
         # 读取图像
         image = cv2.imread(image_path)
         if image is None:
@@ -609,25 +628,33 @@ class AIAutoLabeler:
             if isinstance(detection, dict):
                 label = detection.get("label", "unknown")
                 confidence = detection.get("confidence", 0.0)
+                points = detection.get("points", None)
                 bbox = detection.get("bbox", [0, 0, 0, 0])
             else:
                 continue
 
-            # 转换为整数坐标
-            x1, y1, x2, y2 = map(int, bbox)
-
             # 获取颜色
             color = self.colors.get(label, self.colors["default"])
 
-            # 绘制检测框
-            cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+            # 判断是否为 OBB（有 points 且至少 3 个点）
+            is_obb = points is not None and len(points) >= 3
+
+            if is_obb:
+                # OBB: 绘制 4 点多边形
+                pts_array = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
+                cv2.polylines(image, [pts_array], isClosed=True, color=color, thickness=2)
+                anchor_x, anchor_y = int(points[0][0]), int(points[0][1])
+            else:
+                # 矩形框：绘制矩形
+                x1, y1, x2, y2 = map(int, bbox)
+                cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+                anchor_x, anchor_y = x1, y1
 
             # 绘制标签和置信度（支持中文）
             label_text = f"{label}: {confidence:.2f}"
 
             # 尝试使用PIL库渲染中文
             try:
-                import numpy as np
                 from PIL import Image, ImageDraw, ImageFont
 
                 # 转换为PIL图像
@@ -642,9 +669,9 @@ class AIAutoLabeler:
                     # 如果没有找到，使用PIL默认字体
                     font = ImageFont.load_default()
 
-                # 绘制文本
-                text_x = x1
-                text_y = y1 - 20 if y1 > 20 else y1 + 20
+                # 绘制文本（使用 anchor 作为标签位置）
+                text_x = anchor_x
+                text_y = anchor_y - 20 if anchor_y > 20 else anchor_y + 20
                 draw.text((text_x, text_y), label_text, font=font, fill=tuple(color[::-1]))
 
                 # 转换回OpenCV图像
@@ -652,7 +679,7 @@ class AIAutoLabeler:
             except Exception as e:
                 # 如果PIL渲染失败，使用OpenCV默认渲染（可能会有乱码）
                 logging.warning(f"中文渲染失败，使用默认渲染: {e}")
-                cv2.putText(image, label_text, (x1, y1 - 10 if y1 > 10 else y1 + 20),
+                cv2.putText(image, label_text, (anchor_x, anchor_y - 10 if anchor_y > 10 else anchor_y + 20),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         # 保存渲染后的图像

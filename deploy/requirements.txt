@@ -1,7 +1,12 @@
 fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-nndeploy
+uvicorn>=0.23.0
 requests>=2.31.0
 Pillow>=10.0.0
 numpy>=1.24.0
-python-multipart>=0.0.6
+ultralytics>=8.0.0
+openai>=1.0.0
+pyyaml>=6.0
+opencv-python>=4.8.0
+supervision>=0.18.0
+pydantic>=2.0.0
+aiohttp>=3.8.0

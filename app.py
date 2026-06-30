@@ -32,6 +32,7 @@ from ai_manager import (
 from deploy.yolo_adapter import YoloAdapter
 from deploy.vllm_client import VllmClient
 from deploy.pipeline_manager import PipelineManager
+from deploy.engine_pool import Engine, EnginePool
 
 # Lazy-init ML engine pool (asyncio.Lock needs an event loop)
 _ml_engine_pool = None
@@ -5384,6 +5385,14 @@ def auto_label_vlm_sam():
 
 # ========================== Smart Pipeline Workflow API ==========================
 
+
+def _add_source(target_id: str, source_id: str, nodes: list):
+    """Helper: add a source dependency for a DAG node."""
+    node = next((n for n in nodes if n["id"] == target_id), None)
+    if node and source_id and source_id != target_id:
+        node.setdefault("source", []).append(source_id)
+
+
 def _litegraph_to_workflow(graph_json: dict) -> dict:
     """Convert LiteGraph.js serialized graph to workflow.yaml-compatible dict."""
     nodes = []
@@ -5396,21 +5405,26 @@ def _litegraph_to_workflow(graph_json: dict) -> dict:
             "type": _type,
         }
         props = node.get("properties", {})
+        # LiteGraph widget values are more current than properties when deserialized,
+        # because configure() restores widgets_values without calling widget callbacks.
+        wvals = node.get("widgets_values")
         if _type == "input":
             cfg["input_type"] = props.get("input_type", "upload")
             if props.get("url"):
                 cfg["url"] = props.get("url")
         elif _type == "yolo":
             cfg["model"] = props.get("model", "")
-            cfg["task"] = props.get("task", "detect")
+            cfg["task"] = (wvals[0] if wvals and len(wvals) > 0 and wvals[0]
+                           else props.get("task", "detect"))
             cfg["params"] = {
-                "conf": float(props.get("conf", 0.25)),
-                "iou": float(props.get("iou", 0.5)),
+                "conf": float(wvals[1] if wvals and len(wvals) > 1 else props.get("conf", 0.25)),
+                "iou": float(wvals[2] if wvals and len(wvals) > 2 else props.get("iou", 0.5)),
             }
         elif _type == "condition":
             cfg["expression"] = props.get("expression", "max_conf > 0.5")
         elif _type == "vllm":
             cfg["api_url"] = props.get("api_url", "")
+            cfg["api_key"] = props.get("api_key", "")
             cfg["model_name"] = props.get("model_name", "")
             cfg["prompt"] = props.get("prompt", "")
             cfg["extract_roi"] = props.get("extract_roi", False)
@@ -5424,8 +5438,16 @@ def _litegraph_to_workflow(graph_json: dict) -> dict:
         nodes.append(cfg)
 
     # Build links (source->target relationships)
+    # Handle both array format [id, origin_id, slot, target_id, slot, type] and object format
     links = graph_json.get("links", [])
     for link in links:
+        if isinstance(link, (list, tuple)):
+            link = {
+                "id": link[0], "origin_id": link[1],
+                "origin_slot": link[2], "target_id": link[3],
+                "target_slot": link[4],
+                "type": link[5] if len(link) > 5 else "",
+            }
         src_node = next((n for n in graph_json.get("nodes", [])
                          if n.get("id") == link.get("origin_id")), None)
         dst_node = next((n for n in graph_json.get("nodes", [])
@@ -5435,18 +5457,24 @@ def _litegraph_to_workflow(graph_json: dict) -> dict:
         else:
             _dst_type = ""
         if _dst_type == "vllm":
-            cond_node = next((n for n in nodes if n["id"] == str(src_node.get("id"))), None)
-            if cond_node:
-                dst_vllm = next((n for n in nodes if n["id"] == str(dst_node.get("id"))), None)
-                if dst_vllm:
-                    dst_vllm["condition"] = cond_node["id"]
+            src_node_obj = next((n for n in graph_json.get("nodes", []) if n.get("id") == link.get("origin_id")), None)
+            _src_type = src_node_obj.get("type", "").lower().replace("node", "").split("/")[-1] if src_node_obj else ""
+            # Link from condition → vllm sets the condition gate
+            if _src_type == "condition":
+                cond_node = next((n for n in nodes if n["id"] == str(src_node.get("id"))), None)
+                if cond_node:
+                    dst_vllm = next((n for n in nodes if n["id"] == str(dst_node.get("id"))), None)
+                    if dst_vllm:
+                        dst_vllm["condition"] = cond_node["id"]
+            # Other incoming links (input/yolo) add as source dependency for DAG ordering
+            else:
+                _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
+        if _dst_type == "yolo":
+            _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
+        if _dst_type == "condition":
+            _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
         if _dst_type == "output":
-            out_node = next((n for n in nodes if n["id"] == str(dst_node.get("id"))), None)
-            src_name = str(src_node.get("id")) if src_node else ""
-            if out_node and src_name:
-                if "source" not in out_node:
-                    out_node["source"] = []
-                out_node["source"].append(src_name)
+            _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
 
     title = graph_json.get("title", "untitled")
     return {
@@ -5678,7 +5706,30 @@ def wf_get():
     if not os.path.exists(path):
         return jsonify({'error': '工作流不存在'}), 404
     with open(path, 'r', encoding='utf-8') as f:
-        return jsonify({'name': name, 'content': json_lib.load(f)})
+        graph_data = json_lib.load(f)
+        _derive_vllm_conditions(graph_data)
+        return jsonify({'name': name, 'content': graph_data})
+
+
+def _derive_vllm_conditions(graph_data: dict):
+    """Patch VLLM node properties.condition from incoming links.
+
+    The front-end ``condition`` property may be empty when the graph was
+    last saved, but the YAML derive step already reads it from link
+    topology.  This function brings the JSON property in sync so the
+    property panel shows the correct value.
+    """
+    if not graph_data or 'links' not in graph_data or 'nodes' not in graph_data:
+        return
+    node_map = {n.get('id'): n for n in graph_data['nodes']}
+    for link in graph_data['links']:
+        if isinstance(link, (list, tuple)):
+            link = {'origin_id': link[1], 'target_id': link[3]}
+        dst = node_map.get(link.get('target_id'))
+        if dst and 'vllm' in (dst.get('type', '') or '').lower():
+            src = node_map.get(link.get('origin_id'))
+            if src and 'condition' in (src.get('type', '') or '').lower():
+                dst.setdefault('properties', {})['condition'] = str(src['id'])
 
 
 @app.route('/api/wf/save', methods=['POST'])
@@ -5691,6 +5742,8 @@ def wf_save():
         return jsonify({'error': '缺少 graph 数据'}), 400
 
     os.makedirs(WORKFLOW_DIR, exist_ok=True)
+
+    _derive_vllm_conditions(graph_data)
 
     # Save raw LiteGraph JSON (for re-editing)
     json_path = _wf_path(name)
@@ -5709,6 +5762,32 @@ def wf_save():
         pass
 
     return jsonify({'success': True, 'name': name, 'path': json_path})
+
+
+@app.route('/api/wf/yaml')
+def wf_yaml():
+    """Serve the workflow YAML content (for deploy service download)."""
+    name = request.args.get('name', '')
+    if not name:
+        return jsonify({'error': '缺少 name 参数'}), 400
+    # Ensure YAML exists (generate from JSON if needed)
+    yaml_path = _wf_yaml_path(name)
+    json_path = _wf_path(name)
+    if not os.path.exists(yaml_path) and os.path.exists(json_path):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                graph_data = json_lib.load(f)
+            workflow_dict = _litegraph_to_workflow(graph_data)
+            workflow_dict['name'] = name
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                yaml_lib.dump(workflow_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        except Exception:
+            return jsonify({'error': '工作流文件解析失败'}), 500
+    if not os.path.exists(yaml_path):
+        return jsonify({'error': '工作流不存在'}), 404
+    with open(yaml_path, 'r', encoding='utf-8') as f:
+        yaml_content = f.read()
+    return yaml_content, 200, {'Content-Type': 'text/yaml; charset=utf-8'}
 
 
 @app.route('/api/wf/delete', methods=['POST'])
@@ -5910,12 +5989,50 @@ def wf_execute():
         engine_pool = _get_ml_engine_pool()
         yolo = _get_ml_yolo_adapter()
         vllm = _get_ml_vllm_client()
-        result = asyncio.run(mgr.execute(
-            image=image,
-            engine_pool=engine_pool,
-            yolo_adapter=yolo,
-            vllm_client=vllm,
-        ))
+
+        async def _run_with_autoload():
+            """单次事件循环内完成模型加载 + 工作流执行。"""
+            # 自动加载 YOLO 节点所需的模型到引擎池
+            for node in mgr.config.pipeline:
+                if node.type.value == 'yolo' and node.model:
+                    existing = await engine_pool.get(node.model)
+                    if existing and existing.engine is not None:
+                        continue
+                    parts = node.model.split('/', 1)
+                    if len(parts) != 2:
+                        continue
+                    p_name, p_version = parts
+                    p_dir = os.path.join(get_project_path(p_name), 'models', p_version)
+                    if not os.path.isdir(p_dir):
+                        continue
+                    model_path = None
+                    for ext in ('.engine', '.pt', '.onnx'):
+                        for f in os.listdir(p_dir):
+                            if f.endswith(ext) and os.path.isfile(os.path.join(p_dir, f)):
+                                model_path = os.path.join(p_dir, f)
+                                break
+                        if model_path:
+                            break
+                    if not model_path:
+                        continue
+                    try:
+                        loaded = yolo.load_model(model_path)
+                        meta = {'task_type': node.task or 'detect', 'model_file': model_path}
+                        eng = Engine(
+                            engine_id=node.model, engine_type='yolo_model',
+                            project_id=p_name, engine=loaded, metadata=meta,
+                        )
+                        await engine_pool.add(eng)
+                        print(f'Auto-loaded model {node.model} from {model_path}')
+                    except Exception as load_err:
+                        print(f'Failed to load model {node.model}: {load_err}')
+
+            return await mgr.execute(
+                image=image, engine_pool=engine_pool,
+                yolo_adapter=yolo, vllm_client=vllm,
+            )
+
+        result = asyncio.run(_run_with_autoload())
         result['workflow_id'] = name
         result['mode'] = 'local_engine'
         if image_warning:

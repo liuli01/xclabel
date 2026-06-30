@@ -1046,10 +1046,12 @@
                             }
                             html += '  </div>';
                             const testDisabled = v.is_training || v.status === 'error' || v.status === 'stopped';
-                            const publishDisabled = v.is_training || v.status === 'error' || v.status === 'stopped';
                             html += '  <div class="version-actions">';
                             html += '    <button class="btn btn-info" onclick="testModelVersion(\'' + v.version + '\')"' + (testDisabled ? ' disabled' : '') + '>';
                             html += '      <i class="fas fa-vial"></i> 模型测试';
+                            html += '    </button>';
+                            html += '    <button class="btn btn-primary" onclick="showDeployDialog(\'' + v.version + '\')"' + (testDisabled ? ' disabled' : '') + '>';
+                            html += '      <i class="fas fa-rocket"></i> 模型部署';
                             html += '    </button>';
                             html += '    <button class="btn btn-success" onclick="downloadModel(\'' + v.version + '\')"' + (testDisabled ? ' disabled' : '') + '>';
                             html += '      <i class="fas fa-download"></i> 下载 .pt';
@@ -1061,19 +1063,6 @@
                             } else {
                                 html += '    <button class="btn btn-secondary" onclick="exportOnnx(this, \'' + v.version + '\')"' + (testDisabled ? ' disabled' : '') + '>';
                                 html += '      <i class="fas fa-file-export"></i> 导出 ONNX';
-                                html += '    </button>';
-                            }
-                            if (v.published) {
-                                html += '    <button class="btn btn-outline-warning" onclick="unpublishModel(this, \'' + v.version + '\')">';
-                                html += '      <i class="fas fa-times"></i> 取消发布';
-                                html += '    </button>';
-                            } else if (v.onnx_exists) {
-                                html += '    <button class="btn btn-warning" onclick="publishModel(this, \'' + v.version + '\')"' + (publishDisabled ? ' disabled' : '') + '>';
-                                html += '      <i class="fas fa-share"></i> 发布';
-                                html += '    </button>';
-                            } else {
-                                html += '    <button class="btn btn-warning" onclick="publishModel(this, \'' + v.version + '\')"' + (publishDisabled ? ' disabled' : '') + ' title="将先导出 ONNX 再发布">';
-                                html += '      <i class="fas fa-share"></i> 发布';
                                 html += '    </button>';
                             }
                             html += '    <button class="btn btn-danger" onclick="deleteModelVersion(\'' + v.version + '\')"' + (v.is_training ? ' disabled' : '') + '>';
@@ -1138,65 +1127,6 @@
             });
         }
 
-        function publishModel(btn, version) {
-            if (!projectName) return;
-            const targetPath = 'resources/models/' + projectName + '/' + projectName + '_' + version + '.onnx';
-            if (!confirm('确定要发布版本 ' + version + ' 到 nndeploy-app 吗？\n目标路径: ' + targetPath)) return;
-            btn.disabled = true;
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 发布中...';
-            fetch('/api/model/publish', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project: projectName, version: version })
-            })
-            .then(r => r.json())
-            .then(data => {
-                btn.disabled = false;
-                if (data.success) {
-                    showToast(data.message);
-                    loadModelInfo();
-                } else {
-                    btn.innerHTML = originalHtml;
-                    showToast(data.error || '发布失败', 'error');
-                }
-            })
-            .catch(err => {
-                btn.disabled = false;
-                btn.innerHTML = originalHtml;
-                showToast('发布失败: ' + err.message, 'error');
-            });
-        }
-
-        function unpublishModel(btn, version) {
-            if (!projectName) return;
-            if (!confirm('确定要取消发布版本 ' + version + ' 吗？')) return;
-            btn.disabled = true;
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 取消中...';
-            fetch('/api/model/unpublish', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project: projectName, version: version })
-            })
-            .then(r => r.json())
-            .then(data => {
-                btn.disabled = false;
-                if (data.success) {
-                    showToast(data.message);
-                    loadModelInfo();
-                } else {
-                    btn.innerHTML = originalHtml;
-                    showToast(data.error || '取消发布失败', 'error');
-                }
-            })
-            .catch(err => {
-                btn.disabled = false;
-                btn.innerHTML = originalHtml;
-                showToast('取消发布失败: ' + err.message, 'error');
-            });
-        }
-
         function deleteModelVersion(version) {
             if (!projectName) return;
             if (!confirm('确定要删除版本 ' + version + ' 吗？此操作不可恢复。')) return;
@@ -1219,6 +1149,115 @@
             });
         }
 
+        // ---- 模型部署相关 ----
+        let currentDeployVersion = '';
+
+        function showDeployDialog(version) {
+            currentDeployVersion = version;
+            document.getElementById('deployProjectName').textContent = projectName;
+            document.getElementById('deployVersionName').textContent = version;
+            document.getElementById('deployResult').style.display = 'none';
+
+            // 从首页配置加载默认地址
+            fetch('/api/global-config')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.config) {
+                        document.getElementById('deployServerUrl').value = data.config.deploy_server_url || 'http://127.0.0.1:8000';
+                        document.getElementById('deployServerUrlXclabel').value = data.config.xclabel_server_url || '';
+                    } else {
+                        document.getElementById('deployServerUrl').value = 'http://127.0.0.1:8000';
+                        document.getElementById('deployServerUrlXclabel').value = '';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('deployServerUrl').value = 'http://127.0.0.1:8000';
+                    document.getElementById('deployServerUrlXclabel').value = '';
+                });
+
+            document.getElementById('deployModal').style.display = 'flex';
+            document.getElementById('deployConfirmBtn').disabled = false;
+            document.getElementById('deployConfirmBtn').innerHTML = '<i class="fas fa-rocket"></i> 确认部署';
+        }
+
+        function closeDeployDialog() {
+            document.getElementById('deployModal').style.display = 'none';
+            document.getElementById('deployResult').style.display = 'none';
+        }
+
+        // 点击遮罩层关闭部署弹窗
+        document.addEventListener('click', function(e) {
+            const modal = document.getElementById('deployModal');
+            if (e.target === modal) {
+                closeDeployDialog();
+            }
+        });
+
+        function deployModel() {
+            const deployUrl = document.getElementById('deployServerUrl').value.trim();
+            const serverUrl = document.getElementById('deployServerUrlXclabel').value.trim();
+
+            if (!deployUrl) {
+                showToast('请输入 deploy 服务地址', 'error');
+                return;
+            }
+            if (!serverUrl) {
+                showToast('请输入模型服务地址（server_url）', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('deployConfirmBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 部署中...';
+
+            const resultDiv = document.getElementById('deployResult');
+            resultDiv.style.display = 'none';
+
+            const apiUrl = deployUrl.replace(/\/+$/, '') + '/load/model';
+            const payload = {
+                project_id: projectName,
+                model_version: currentDeployVersion,
+                server_url: serverUrl
+            };
+
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json().catch(() => ({ error: '响应解析失败' })))
+            .then(data => {
+                resultDiv.style.display = 'block';
+                if (data.engine_id) {
+                    resultDiv.className = 'alert alert-success';
+                    resultDiv.style.cssText = 'margin-bottom:16px;padding:12px;border-radius:6px;background:#d4edda;color:#155724;border:1px solid #c3e6cb;';
+                    resultDiv.innerHTML = '<strong><i class="fas fa-check-circle"></i> 部署成功!</strong><br>' +
+                        '引擎 ID: ' + data.engine_id + '<br>' +
+                        '状态: ' + (data.status || 'loaded') +
+                        (data.metadata ? '<br><pre style="font-size:12px;margin-top:6px;max-height:120px;overflow:auto;">' + JSON.stringify(data.metadata, null, 2) + '</pre>' : '');
+                    btn.innerHTML = '<i class="fas fa-check"></i> 已部署';
+                } else {
+                    resultDiv.className = 'alert alert-danger';
+                    resultDiv.style.cssText = 'margin-bottom:16px;padding:12px;border-radius:6px;background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;';
+                    resultDiv.innerHTML = '<strong><i class="fas fa-times-circle"></i> 部署失败</strong><br>' + (data.detail || data.error || '未知错误');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-rocket"></i> 确认部署';
+                }
+            })
+            .catch(err => {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'alert alert-danger';
+                resultDiv.style.cssText = 'margin-bottom:16px;padding:12px;border-radius:6px;background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;';
+                resultDiv.innerHTML = '<strong><i class="fas fa-times-circle"></i> 请求失败</strong><br>' + err.message;
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-rocket"></i> 确认部署';
+            });
+        }
+        // ---- 模型部署结束 ----
+
         // 页面加载时获取模型信息
         loadModelInfo();
 
@@ -1231,4 +1270,34 @@
         }
     </script>
 </body>
+
+<!-- 模型部署弹窗 -->
+<div id="deployModal" class="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center;">
+    <div class="modal-content" style="background:#fff;border-radius:8px;padding:24px;max-width:500px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.2);position:relative;">
+        <span class="close" onclick="closeDeployDialog()" style="position:absolute;top:12px;right:16px;font-size:24px;cursor:pointer;color:#999;">&times;</span>
+        <h3 style="margin:0 0 20px 0;color:#333;"><i class="fas fa-rocket"></i> 模型部署</h3>
+        <div id="deployInfo" style="margin-bottom:16px;padding:12px;background:#f8f9fa;border-radius:6px;">
+            <div style="margin-bottom:6px;"><strong>工程:</strong> <span id="deployProjectName"></span></div>
+            <div><strong>版本:</strong> <span id="deployVersionName"></span></div>
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+            <label for="deployServerUrl" style="display:block;margin-bottom:6px;font-weight:600;color:#555;">deploy 服务地址:</label>
+            <input type="url" id="deployServerUrl" placeholder="http://127.0.0.1:8000" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:4px;font-size:1em;box-sizing:border-box;">
+            <small style="color:#888;">xclabel-deploy 服务的地址，用于加载模型到推理引擎</small>
+        </div>
+        <div class="form-group" style="margin-bottom:20px;">
+            <label for="deployServerUrlXclabel" style="display:block;margin-bottom:6px;font-weight:600;color:#555;">模型服务地址 (server_url):</label>
+            <input type="url" id="deployServerUrlXclabel" placeholder="http://xclabel-server:5000" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:4px;font-size:1em;box-sizing:border-box;">
+            <small style="color:#888;">xclabel 服务地址（内网或公网），deploy 通过此地址下载模型文件，在首页设置中配置</small>
+        </div>
+        <div id="deployResult" style="display:none;margin-bottom:16px;padding:12px;border-radius:6px;"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button type="button" class="btn btn-secondary" onclick="closeDeployDialog()" style="padding:8px 20px;">取消</button>
+            <button type="button" class="btn btn-primary" id="deployConfirmBtn" onclick="deployModel()" style="padding:8px 20px;">
+                <i class="fas fa-rocket"></i> 确认部署
+            </button>
+        </div>
+    </div>
+</div>
+
 </html>

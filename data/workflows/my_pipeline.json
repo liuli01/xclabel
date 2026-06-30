@@ -1,0 +1,219 @@
+{
+  "last_node_id": 5,
+  "last_link_id": 6,
+  "nodes": [
+    {
+      "id": 3,
+      "type": "xclabel/output",
+      "pos": [
+        979,
+        245
+      ],
+      "size": [
+        240,
+        200
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "link": 5,
+          "name": "in",
+          "type": "*"
+        }
+      ],
+      "title": "Output [0ms]",
+      "properties": {},
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 1,
+      "type": "xclabel/input",
+      "pos": [
+        321,
+        258
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "links": [
+            1,
+            3
+          ],
+          "name": "image",
+          "slot_index": 0,
+          "type": "image"
+        }
+      ],
+      "title": "Input [0ms]",
+      "properties": {
+        "input_type": "upload",
+        "url": ""
+      },
+      "widgets_values": [
+        "upload"
+      ],
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 5,
+      "type": "xclabel/output",
+      "pos": [
+        985,
+        545
+      ],
+      "size": [
+        240,
+        200
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "in",
+          "type": "*",
+          "link": 6
+        }
+      ],
+      "title": "Output [0ms]",
+      "properties": {},
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 2,
+      "type": "xclabel/yolo",
+      "pos": [
+        640,
+        243
+      ],
+      "size": {
+        "0": 210,
+        "1": 106
+      },
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "link": 1,
+          "name": "image",
+          "type": "image"
+        }
+      ],
+      "outputs": [
+        {
+          "links": [
+            5
+          ],
+          "name": "detections",
+          "slot_index": 0,
+          "type": "array"
+        }
+      ],
+      "title": "YOLO [2156ms]",
+      "properties": {
+        "model": "sv30_seg/20260618_172731",
+        "task": "segment",
+        "conf": 0.25,
+        "iou": 0.5
+      },
+      "widgets_values": [
+        "segment",
+        0.25,
+        0.5
+      ],
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 4,
+      "type": "xclabel/yolo",
+      "pos": [
+        648,
+        458
+      ],
+      "size": {
+        "0": 210,
+        "1": 106
+      },
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "image",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "detections",
+          "type": "array",
+          "links": [
+            6
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "YOLO [24654ms]",
+      "properties": {
+        "model": "ocr_table/20260625_162438",
+        "task": "segment",
+        "conf": 0.25,
+        "iou": 0.5
+      },
+      "widgets_values": [
+        "segment",
+        0.25,
+        0.5
+      ],
+      "boxcolor": "#27ae60"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "image"
+    ],
+    [
+      3,
+      1,
+      0,
+      4,
+      0,
+      "image"
+    ],
+    [
+      5,
+      2,
+      0,
+      3,
+      0,
+      "*"
+    ],
+    [
+      6,
+      4,
+      0,
+      5,
+      0,
+      "*"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}

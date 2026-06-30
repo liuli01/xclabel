@@ -1,18 +1,6 @@
 {
     "version": "0.2.0",
     "configurations": [
-                {
-            "name": "Python: nndeploy-app",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/.venv/Scripts/nndeploy-app.exe",
-            "args": [
-                "--port",
-                "8002"
-            ],
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}"
-        },
         {
             "name": "Python: FastAPI (deploy)",
             "type": "debugpy",
@@ -22,10 +10,10 @@
                 "main:app",
                 "--reload",
                 "--port",
-                "8000"
+                "8005"
             ],
             "cwd": "${workspaceFolder}/deploy",
-            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "python": "${workspaceFolder}/deploy/.venv/Scripts/python.exe",
             "jinja": true
         },
         {

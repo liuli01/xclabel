@@ -212,6 +212,13 @@ def main():
             print(f"WARNING: 验证失败: {e}")
             traceback.print_exc()
 
+    # 清理 Ultralytics 产生的 runs 目录
+    runs_dir = os.path.join(os.getcwd(), 'runs')
+    if os.path.exists(runs_dir):
+        import shutil
+        shutil.rmtree(runs_dir, ignore_errors=True)
+        print(f"已清理临时目录: {runs_dir}")
+
     print("训练完成")
 
 

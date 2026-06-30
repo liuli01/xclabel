@@ -114,6 +114,49 @@
                 </div>
             </div>
 
+            <!-- 工作流执行 -->
+            <div class="panel">
+                <h2><i class="fas fa-project-diagram"></i> 工作流执行 <span style="color:#999;font-weight:400;font-size:0.75em;">v1/workflow/execute</span></h2>
+                <div class="load-form">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:2;">
+                            <label>服务端地址</label>
+                            <input type="text" id="wfServerUrl" value="http://127.0.0.1:9924" placeholder="服务端地址（留空使用自定义YAML）">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>工作流名称</label>
+                            <input type="text" id="wfName" value="demo-seg-pipeline" placeholder="workflow name">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:6px;">
+                        <label style="font-size:0.82em;color:#666;cursor:pointer;display:flex;align-items:center;gap:4px;" onclick="toggleWfYaml()">
+                            <span id="wfYamlToggleIcon">▶</span> 自定义 YAML
+                        </label>
+                    </div>
+                    <div id="wfYamlSection" style="display:none;margin-bottom:8px;">
+                        <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center;">
+                            <div class="upload-zone" id="wfYamlUploadZone" style="flex:1;min-height:32px;padding:4px 8px;cursor:pointer;">
+                                <span style="color:#666;font-size:0.82em;">点击选择 .yaml 文件</span>
+                                <input type="file" id="wfYamlFileInput" accept=".yaml,.yml">
+                            </div>
+                            <span style="color:#bbb;font-size:0.78em;">或</span>
+                        </div>
+                        <textarea id="wfYamlContent" rows="5" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-family:Consolas,monospace;font-size:0.82em;resize:vertical;" placeholder="或直接粘贴 YAML 内容..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1;">
+                            <label>测试图片</label>
+                            <div class="upload-zone" id="wfUploadZone" style="min-height:50px;padding:8px;">
+                                <span style="color:#666;font-size:0.85em;">点击上传图片</span>
+                                <input type="file" id="wfImageInput" accept="image/*">
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-success" id="wfBtn"><i class="fas fa-play"></i> 执行工作流</button>
+                    <span id="wfStatus" style="font-size:0.82em;color:#999;margin-left:8px;"></span>
+                </div>
+            </div>
+
             <!-- 已加载引擎列表 / 下拉选择 -->
             <div class="panel">
                 <h2><i class="fas fa-microchip"></i> 选择引擎 <span id="engineCount" style="font-weight:400;color:#999;font-size:0.85em;"></span></h2>
@@ -580,6 +623,181 @@
         document.getElementById('showLabels').addEventListener('change', () => {
             if (currentImageData && currentResult) renderResult(currentImageData, currentResult, currentTaskType);
         });
+
+        // ── Workflow Execute (v1/workflow/execute) ──
+        let wfImageData = null;
+
+        function toggleWfYaml() {
+            const section = document.getElementById('wfYamlSection');
+            const icon = document.getElementById('wfYamlToggleIcon');
+            const shown = section.style.display !== 'none';
+            section.style.display = shown ? 'none' : 'block';
+            icon.textContent = shown ? '▶' : '▼';
+        }
+
+        // YAML file upload → populate textarea
+        document.getElementById('wfYamlFileInput').addEventListener('change', e => {
+            if (e.target.files.length) {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = evt => {
+                    document.getElementById('wfYamlContent').value = evt.target.result;
+                    document.querySelector('#wfYamlUploadZone span').textContent = file.name;
+                    toast('YAML 已加载');
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        document.getElementById('wfImageInput').addEventListener('change', e => {
+            if (e.target.files.length) {
+                const file = e.target.files[0];
+                if (!file.type.startsWith('image/')) { toast('仅支持图片'); return; }
+                const reader = new FileReader();
+                reader.onload = evt => {
+                    wfImageData = evt.target.result;
+                    document.querySelector('#wfUploadZone span').textContent = file.name;
+                    toast('图片已加载');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById('wfBtn').addEventListener('click', async () => {
+            const workflow = document.getElementById('wfName').value.trim();
+            const serverUrl = document.getElementById('wfServerUrl').value.trim();
+            const yamlContent = document.getElementById('wfYamlContent').value.trim();
+            if (!yamlContent && !serverUrl) { toast('请填写服务端地址或粘贴自定义 YAML'); return; }
+            if (!wfImageData) { toast('请先上传图片'); return; }
+
+            const btn = document.getElementById('wfBtn');
+            const status = document.getElementById('wfStatus');
+            btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 执行中...';
+            status.textContent = '下载工作流 + 推理中...';
+
+            try {
+                const body = {
+                    workflow: workflow,
+                    image: wfImageData.split(',')[1],
+                };
+                const yamlContent = document.getElementById('wfYamlContent').value.trim();
+                if (yamlContent) {
+                    body.yaml_content = yamlContent;
+                } else {
+                    body.server_url = serverUrl;
+                }
+
+                const loading = document.getElementById('inferLoading');
+                loading.classList.add('show');
+
+                const r = await fetch(deployBase + '/v1/workflow/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.detail || '执行失败');
+
+                // Display result in JSON panel
+                document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+                document.getElementById('resultJsonPanel').style.display = 'block';
+
+                const info = document.getElementById('resultInfo');
+                info.innerHTML = `
+                    <span>⏱ ${data.execution_time_ms || 0} ms</span>
+                    <span>|</span>
+                    <span>📦 ${data.workflow_id}</span>
+                    <span>|</span>
+                    <span>🎯 ${data.detection_count || 0} 个检测</span>
+                    ${data.errors && data.errors.length ? '<span style="color:#ff4d4f">| ❌ ' + data.errors.length + ' 错误</span>' : ''}
+                `;
+                status.textContent = '✅ 完成';
+                toast('工作流执行完成');
+
+                // Render annotated image on canvas if available
+                const nodeOutputs = data.node_outputs || {};
+                let annotatedImgSrc = null;
+                for (const nid in nodeOutputs) {
+                    const out = nodeOutputs[nid];
+                    if (out.annotated_image) {
+                        annotatedImgSrc = 'data:image/jpeg;base64,' + out.annotated_image;
+                        break;
+                    }
+                }
+                if (annotatedImgSrc) {
+                    const dets = data.detections || [];
+                    renderWorkflowResult(annotatedImgSrc, dets);
+                } else if (wfImageData) {
+                    // Show input image if no annotation
+                    renderWorkflowResult(wfImageData, []);
+                }
+
+                await refreshEngines();
+                checkHealth();
+            } catch (e) {
+                toast('❌ ' + e.message);
+                status.textContent = '❌ 失败';
+            } finally {
+                btn.disabled = false; btn.innerHTML = '<i class="fas fa-play"></i> 执行工作流';
+                document.getElementById('inferLoading').classList.remove('show');
+            }
+        });
+
+        // ── Workflow result render (reuse same canvas as infer) ──
+        function renderWorkflowResult(imageSrc, detections) {
+            const canvas = document.getElementById('resultCanvas');
+            const placeholder = document.getElementById('resultPlaceholder');
+            const ctx = canvas.getContext('2d');
+
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                canvas.style.display = 'block';
+                placeholder.style.display = 'none';
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+
+                const colors = ['#FF5733','#33FF57','#3357FF','#FF33F5','#F5FF33','#33FFF5','#FF8C00','#8B00FF'];
+                detections.forEach((d, i) => {
+                    const color = colors[i % colors.length];
+                    const bbox = d.bbox;
+                    const hasPolygon = d.points && d.points.length > 2;
+
+                    if (!hasPolygon && bbox && bbox.length >= 4) {
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]);
+                    }
+
+                    const label = d.class_name || ('class_' + d.class_id);
+                    const conf = d.confidence ? (d.confidence * 100).toFixed(0) + '%' : '';
+                    const labelText = (label ? label : '') + (conf ? ' ' + conf : '');
+                    if (labelText && bbox) {
+                        ctx.font = 'bold 13px sans-serif';
+                        const metrics = ctx.measureText(labelText);
+                        const lx = bbox[0], ly = bbox[1] - 18 < 0 ? bbox[1] + 2 : bbox[1] - 18;
+                        ctx.fillStyle = color;
+                        ctx.fillRect(lx, ly, metrics.width + 8, 18);
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(labelText, lx + 4, ly + 13);
+                    }
+
+                    if (d.points && d.points.length > 2) {
+                        ctx.globalAlpha = 0.3;
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.moveTo(d.points[0].x, d.points[0].y);
+                        for (let j = 1; j < d.points.length; j++) ctx.lineTo(d.points[j].x, d.points[j].y);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.globalAlpha = 1.0;
+                        ctx.stroke();
+                    }
+                });
+            };
+            img.src = imageSrc;
+        }
 
         // ── Init ──
         async function init() {

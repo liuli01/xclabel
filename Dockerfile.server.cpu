@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
-RUN uv add opencv-python-headless
+RUN uv pip install --force-reinstall opencv-python-headless
 
 
 # # 创建 YOLO 插件虚拟环境并安装对应版本 ultralytics
@@ -94,6 +94,7 @@ COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 # 复制应用源码
 COPY --chown=appuser:appgroup app.py .
 COPY --chown=appuser:appgroup AiUtils.py .
+COPY --chown=appuser:appgroup ai_manager.py .
 COPY --chown=appuser:appgroup templates/ ./templates/
 COPY --chown=appuser:appgroup static/ ./static/
 

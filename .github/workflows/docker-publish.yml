@@ -49,10 +49,7 @@ jobs:
             image: xclabel-server-gpu
             dockerfile: Dockerfile.server.gpu
             context: .
-          - name: nndeploy
-            image: xclabel-nndeploy
-            dockerfile: nndeploy-app/Dockerfile
-            context: .
+
           - name: deploy-cpu
             image: xclabel-deploy-cpu
             dockerfile: Dockerfile.deploy.cpu

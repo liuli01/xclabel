@@ -292,15 +292,20 @@
                 </div>
             </div>
 
-            <!-- 工作流服务配置 -->
+            <!-- 模型部署服务配置 -->
             <div class="form-group" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef;">
-                <h3 style="margin: 0 0 10px 0; font-size: 1.1em; color: #555;"><i class="fas fa-project-diagram"></i> 工作流服务</h3>
-                <label for="globalNndeployUrl">nndeploy-app 地址:</label>
-                <input type="url" id="globalNndeployUrl" placeholder="http://localhost:8002" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
-                <small style="color: #888;">配置工作流编排服务的访问地址</small>
+                <h3 style="margin: 0 0 10px 0; font-size: 1.1em; color: #555;"><i class="fas fa-rocket"></i> 模型部署</h3>
+                <label for="globalDeployUrl">deploy 服务地址:</label>
+                <input type="url" id="globalDeployUrl" placeholder="http://127.0.0.1:8000" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+                <small style="color: #888;">配置模型部署（xclabel-deploy）服务的访问地址，用于加载模型到推理引擎</small>
+                <div style="margin-top: 8px;">
+                    <label for="globalXclabelServerUrl">模型服务地址（server_url）:</label>
+                    <input type="url" id="globalXclabelServerUrl" placeholder="http://xclabel-server:5000" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+                    <small style="color: #888;">deploy 用于下载模型文件的 xclabel 服务地址，内网或公网地址</small>
+                </div>
                 <div style="margin-top: 10px;">
-                    <button type="button" class="btn btn-success" id="saveGlobalNndeployUrl">
-                        <i class="fas fa-save"></i> 保存地址
+                    <button type="button" class="btn btn-success" id="saveGlobalDeployConfig">
+                        <i class="fas fa-save"></i> 保存配置
                     </button>
                 </div>
             </div>
@@ -385,6 +390,53 @@
                     </div>
                 </div>
             </div>
+            <!-- SAM2 模型下载 -->
+            <div class="sam2-download-section" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #e9ecef;">
+                <h3 style="margin: 0 0 15px 0; font-size: 1.1em; color: #555;">
+                    <i class="fas fa-cut"></i> SAM2 分割模型
+                </h3>
+                <p style="font-size: 0.85em; color: #888; margin-bottom: 15px;">
+                    下载地址：<a href="https://hf-mirror.com" target="_blank">hf-mirror.com</a>（中国 HuggingFace 镜像）
+                </p>
+                <div style="margin-bottom: 10px;">
+                    <label style="font-weight: 500; display: block; margin-bottom: 8px;">选择要下载的 SAM2 版本:</label>
+                    <div id="samModelsCheckboxContainer" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        <!-- SAM2 模型复选框将通过 JS 动态生成 -->
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: fit-content;">
+                    <button type="button" class="btn btn-primary icon-btn" id="downloadSamModelsBtn">
+                        <i class="fas fa-download"></i> <span class="btn-text">下载选中模型</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary icon-btn" id="refreshSamModelsBtn">
+                        <i class="fas fa-sync-alt"></i> <span class="btn-text">刷新状态</span>
+                    </button>
+                </div>
+
+                <!-- 已安装模型列表 -->
+                <div id="samModelsContainer" style="margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 1em; color: #666;">已安装模型:</h4>
+                    <div id="samModelsList" style="background-color: #f8f9fa; padding: 10px; border-radius: 4px; min-height: 40px; font-size: 0.9em;">
+                        <!-- 模型列表动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 下载状态 -->
+                <div id="samDownloadStatus" style="margin-top: 10px; padding: 8px; background-color: #f8f9fa; border-radius: 4px; font-size: 0.9em; display: none;">
+                    <i class="fas fa-info-circle"></i> <span id="samStatusText">就绪</span>
+                </div>
+
+                <!-- 下载进度条 -->
+                <div id="samDownloadProgress" style="margin-top: 8px; display: none;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                        <span style="font-size: 0.85em; color: #666;" id="samProgressLabel">下载进度:</span>
+                        <span id="samProgressPercent">0%</span>
+                    </div>
+                    <div style="width: 100%; height: 6px; background-color: #e9ecef; border-radius: 3px; overflow: hidden;">
+                        <div id="samProgressBar" style="width: 0%; height: 100%; background-color: #339af0; transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -413,6 +465,8 @@
             if (typeof updateYoloModelCheckboxes === 'function') updateYoloModelCheckboxes();
             if (typeof checkYolo11InstallStatus === 'function') checkYolo11InstallStatus();
             if (typeof refreshModels === 'function') refreshModels();
+            // 初始化 SAM2 模型状态
+            if (typeof refreshSamModels === 'function') refreshSamModels();
         });
 
         // 加载工程列表
@@ -578,10 +632,10 @@
                 workflowBtn.addEventListener('click', openWorkflow);
             }
 
-            // 保存全局 nndeploy-app 地址
-            const saveGlobalNndeployUrlBtn = document.getElementById('saveGlobalNndeployUrl');
-            if (saveGlobalNndeployUrlBtn) {
-                saveGlobalNndeployUrlBtn.addEventListener('click', saveGlobalNndeployUrl);
+            // 保存全局 deploy 配置
+            const saveGlobalDeployConfigBtn = document.getElementById('saveGlobalDeployConfig');
+            if (saveGlobalDeployConfigBtn) {
+                saveGlobalDeployConfigBtn.addEventListener('click', saveGlobalDeployConfig);
             }
 
             // YOLO环境安装/卸载
@@ -602,6 +656,16 @@
             }
             if (refreshModelsBtn && typeof refreshModels === 'function') {
                 refreshModelsBtn.addEventListener('click', refreshModels);
+            }
+
+            // SAM2 按钮事件
+            const downloadSamBtn = document.getElementById('downloadSamModelsBtn');
+            const refreshSamBtn = document.getElementById('refreshSamModelsBtn');
+            if (downloadSamBtn && typeof downloadSamModels === 'function') {
+                downloadSamBtn.addEventListener('click', downloadSamModels);
+            }
+            if (refreshSamBtn && typeof refreshSamModels === 'function') {
+                refreshSamBtn.addEventListener('click', refreshSamModels);
             }
 
             // YOLO版本切换
@@ -641,25 +705,36 @@
                 .then(data => {
                     if (data.success && data.config) {
                         globalConfig = data.config;
-                        document.getElementById('globalNndeployUrl').value = data.config.nndeploy_app_url || '';
+                        document.getElementById('globalDeployUrl').value = data.config.deploy_server_url || '';
+                        document.getElementById('globalXclabelServerUrl').value = data.config.xclabel_server_url || '';
                     }
                 })
                 .catch(error => console.error('加载全局配置失败:', error));
         }
 
         // 显示设置模态框
+        function openWorkflow() {
+            window.location.href = '/workflow';
+        }
+
         function showSettingsModal() {
             loadGlobalConfig();
             document.getElementById('settingsModal').style.display = 'block';
+            // 刷新 SAM2 模型状态
+            if (typeof refreshSamModels === 'function') refreshSamModels();
         }
 
-        // 保存全局 nndeploy-app 地址
-        function saveGlobalNndeployUrl() {
-            const url = document.getElementById('globalNndeployUrl').value.trim();
+        // 保存全局 deploy 配置
+        function saveGlobalDeployConfig() {
+            const deployUrl = document.getElementById('globalDeployUrl').value.trim();
+            const xclabelUrl = document.getElementById('globalXclabelServerUrl').value.trim();
             fetch('/api/global-config', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nndeploy_app_url: url })
+                body: JSON.stringify({
+                    deploy_server_url: deployUrl,
+                    xclabel_server_url: xclabelUrl
+                })
             })
             .then(response => response.json())
             .then(data => {
@@ -667,8 +742,9 @@
                     showToast(data.error, 'error');
                     return;
                 }
-                globalConfig.nndeploy_app_url = url;
-                showToast('地址已保存');
+                globalConfig.deploy_server_url = deployUrl;
+                globalConfig.xclabel_server_url = xclabelUrl;
+                showToast('配置已保存');
             })
             .catch(error => {
                 console.error('保存全局配置失败:', error);
@@ -676,15 +752,6 @@
             });
         }
 
-        // 打开工作流页面
-        function openWorkflow() {
-            const url = globalConfig.nndeploy_app_url || '';
-            if (url) {
-                window.open(url, '_blank');
-            } else {
-                showToast('请先配置工作流地址', 'error');
-            }
-        }
 
         // 创建工程
         function createProject(name) {

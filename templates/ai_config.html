@@ -586,7 +586,7 @@
                             <label for="timeout">超时时间（秒）</label>
                             <div class="input-with-icon">
                                 <i class="fas fa-clock"></i>
-                                <input type="number" id="timeout" value="30" min="1" max="300" class="with-icon">
+                                <input type="number" id="timeout" value="300" min="1" max="600" class="with-icon">
                             </div>
                         </div>
                         <div class="form-group">
@@ -611,6 +611,22 @@
                                 </select>
                             </div>
                             <small style="color: #888; font-size: 0.8em;">交集=只取评分最高的一个；并集=合并多个候选分割结果</small>
+                        </div>
+                    </div>
+
+                    <div class="tool-section">
+                        <h4>标注模式</h4>
+                        <div class="form-group">
+                            <div id="labelModeSelector" style="display: flex; gap: 15px; margin-top: 5px;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa;">
+                                    <input type="radio" name="labelMode" value="detect" checked>
+                                    <i class="fas fa-vector-square"></i> Detect 模式
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa;">
+                                    <input type="radio" name="labelMode" value="obb">
+                                    <i class="fas fa-sync-alt"></i> OBB 模式
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -1084,6 +1100,33 @@
                 samMaskMode: document.getElementById('samMaskMode').value
             };
         }
+
+        // OBB 默认提示词模板
+        const OBB_PROMPT_TEMPLATE = '检测图中的旋转框（OBB），输出 JSON 格式（每个点 [x,y] 只有 2 个数字）：\n' +
+            '{"detections":[\n' +
+            '  {"label":"类别","confidence":0.9,\n' +
+            '   "points":[[x,y],[x,y],[x,y],[x,y]]}\n' +
+            ']}\n' +
+            '要求：points 包含 4 个角点 [x,y]（每个角点只有 2 个数字），顺时针排列（左上→右上→右下→左下），坐标用像素值。';
+
+        // 普通检测默认提示词模板
+        const NORMAL_PROMPT_TEMPLATE = '检测图中物体，返回JSON：{"detections":[{"label":"类别","confidence":0.9,"bbox":[x1,y1,x2,y2]}]}';
+
+        // 标注模式切换（Detect / OBB）
+        document.addEventListener('DOMContentLoaded', function() {
+            const modeRadios = document.querySelectorAll('input[name="labelMode"]');
+            const promptTextarea = document.getElementById('prompt');
+
+            modeRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.checked) {
+                        promptTextarea.value = this.value === 'obb'
+                            ? OBB_PROMPT_TEMPLATE
+                            : NORMAL_PROMPT_TEMPLATE;
+                    }
+                });
+            });
+        });
 
         // 处理图片标注
         function handleImageAnnotation() {
