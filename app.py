@@ -5435,6 +5435,11 @@ def _litegraph_to_workflow(graph_json: dict) -> dict:
             cfg["condition"] = props.get("condition", "")
         elif _type == "output":
             cfg["source"] = [props.get("source", "")] if props.get("source") else []
+        elif _type == "calc":
+            cfg["expression"] = props.get("expression", "")
+            cfg["params"] = {
+                "output_field": props.get("output_field", "computed"),
+            }
         nodes.append(cfg)
 
     # Build links (source->target relationships)
@@ -5474,6 +5479,8 @@ def _litegraph_to_workflow(graph_json: dict) -> dict:
         if _dst_type == "condition":
             _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
         if _dst_type == "output":
+            _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
+        if _dst_type == "calc":
             _add_source(str(dst_node.get("id")), str(src_node.get("id")), nodes)
 
     title = graph_json.get("title", "untitled")
