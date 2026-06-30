@@ -363,8 +363,19 @@ class PipelineManager:
             raise ValueError(f"表达式求值失败: {e}")
 
     @staticmethod
+    def _normalize_points(points) -> list:
+        """dict格式 [{'x':n,'y':n},...] → 扁平列表 [x1,y1,x2,y2,...]"""
+        if points and isinstance(points[0], dict):
+            flat = []
+            for p in points:
+                flat.extend([float(p.get('x', 0)), float(p.get('y', 0))])
+            return flat
+        return points
+
+    @staticmethod
     def _calc_area(bbox, points) -> float:
         """计算面积。有 segmentation points 时用鞋带公式，否则用 bbox 面积。"""
+        points = PipelineManager._normalize_points(points)
         if points and len(points) >= 6:
             xs = points[0::2]
             ys = points[1::2]
@@ -385,6 +396,7 @@ class PipelineManager:
     @staticmethod
     def _calc_perimeter(bbox, points) -> float:
         """计算周长。有 segmentation points 时用多边形周长，否则用 bbox 周长。"""
+        points = PipelineManager._normalize_points(points)
         if points and len(points) >= 6:
             xs = points[0::2]
             ys = points[1::2]
@@ -448,6 +460,12 @@ class PipelineManager:
         for det in detections:
             bbox = det.get('bbox', [0, 0, 0, 0])
             points = det.get('points', [])
+            # Normalize points format: [{"x":n,"y":n},...] → [x1,y1,x2,y2,...]
+            if points and isinstance(points[0], dict):
+                flat = []
+                for p in points:
+                    flat.extend([float(p.get('x', 0)), float(p.get('y', 0))])
+                points = flat
 
             vars = {
                 'conf': float(det.get('confidence', 0)),

@@ -4,3 +4,24 @@ pipeline:
 - id: '1'
   type: input
   input_type: url
+  url: https://free.boltp.com/2026/06/29/6a42116caa1e2.webp
+- id: '2'
+  type: yolo
+  model: sv30_seg/20260618_172731
+  task: segment
+  params:
+    conf: 0.25
+    iou: 0.5
+  source:
+  - '1'
+- id: '8'
+  type: output
+  source:
+  - '9'
+- id: '9'
+  type: calc
+  expression: (width * height) / 100
+  params:
+    output_field: computed
+  source:
+  - '2'

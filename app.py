@@ -5765,8 +5765,7 @@ def wf_save():
         with open(yaml_path, 'w', encoding='utf-8') as f:
             yaml_lib.dump(workflow_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
     except Exception as e:
-        # YAML conversion is best-effort; JSON save always succeeds
-        pass
+        print(f'[wf_save] YAML conversion failed for {name}: {e}', flush=True)
 
     return jsonify({'success': True, 'name': name, 'path': json_path})
 

@@ -357,7 +357,7 @@ function CalcNode(){
 	};
 	this.addInput('in', 'array');
 	this.addOutput('out', 'array');
-	this.size = this.computeSize();
+	this.size = [200, 70];
 }
 CalcNode.title = '计算';
 CalcNode.desc = '数学表达式计算';
@@ -370,7 +370,7 @@ CalcNode.prototype.onDrawBackground = function(ctx){
 		var text = this.properties.expression.length > 22
 			? this.properties.expression.substring(0, 22) + '...'
 			: this.properties.expression;
-		ctx.fillText(text, 10, this.size[1] - 10);
+		ctx.fillText(text, 10, this.size[1] - 14);
 	}
 };
 
