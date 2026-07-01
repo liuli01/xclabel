@@ -3171,15 +3171,45 @@ def rename_project(name):
 # 全局配置存储路径
 GLOBAL_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'global_config.json')
 
+# 全局配置默认值
+GLOBAL_CONFIG_DEFAULTS = {
+    'deploy_server_url': '',
+    'xclabel_server_url': 'http://127.0.0.1:9224',
+}
+
+# 环境变量映射：环境变量名 -> 配置键名
+GLOBAL_CONFIG_ENV_MAP = {
+    'XCLABEL_DEPLOY_SERVER_URL': 'deploy_server_url',
+    'XCLABEL_SERVER_URL': 'xclabel_server_url',
+}
+
+
 def load_global_config():
-    """加载全局配置。"""
+    """加载全局配置。
+
+    优先级（低 -> 高）：
+      1. 代码默认值
+      2. JSON 文件持久化值
+      3. 环境变量（最高优先级，可覆盖 UI 设置）
+    """
+    config = dict(GLOBAL_CONFIG_DEFAULTS)
+
+    # 1. 从 JSON 文件加载持久化配置
     if os.path.exists(GLOBAL_CONFIG_FILE):
         try:
             with open(GLOBAL_CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                file_config = json.load(f)
+                config.update(file_config)
         except Exception:
             pass
-    return {}
+
+    # 2. 环境变量覆盖（最高优先级）
+    for env_name, config_key in GLOBAL_CONFIG_ENV_MAP.items():
+        env_value = os.environ.get(env_name)
+        if env_value:
+            config[config_key] = env_value.strip()
+
+    return config
 
 def save_global_config(config):
     """保存全局配置。"""
