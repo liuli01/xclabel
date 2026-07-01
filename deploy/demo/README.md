@@ -1,71 +1,60 @@
-# deploy/demo — API 调用示例
+# xclabel-deploy Workflow 缓存架构与示例
 
-三个示例脚本演示如何通过 HTTP API 调用 Deploy 服务。
+## 三级缓存架构
 
-## 前提
+```
+调用 v1/workflow/execute
+        │
+        ▼
+┌─────────────────────┐
+│  1. pipeline_store   │  ← 内存 LRU (MAX_WORKFLOWS=50)
+│     (OrderedDict)    │     命中直接执行，最快
+└────────┬────────────┘
+         │ 未命中
+         ▼
+┌─────────────────────┐
+│  2. 磁盘缓存          │  ← CACHE_DIR/workflows/{name}.yaml
+│     (YAML 文件)       │     重启后依然有效
+└────────┬────────────┘
+         │ 未命中
+         ▼
+┌─────────────────────┐
+│  3. Server 拉取       │  ← GET /api/wf/yaml?name=xxx
+│     (HTTP)           │     拉取后自动缓存到 磁盘 + 内存
+└─────────────────────┘
+```
 
-1. **Deploy 服务已启动**（默认 http://127.0.0.1:8000）
-2. **主服务已启动**（默认 http://127.0.0.1:9924），示例 1、2 需要从此下载模型/工作流
-3. 依赖：`requests`（可选，示例使用 `urllib` 无额外依赖）
+## 重启行为
 
-## 示例说明
+| 缓存层 | 重启后 | 恢复方式 |
+|--------|--------|----------|
+| pipeline_store (内存) | ❌ 清空 | 首次请求自动从磁盘恢复 |
+| 磁盘 CACHE_DIR/workflows/ | ✅ 保留 | Docker volume 持久化 |
+| EnginePool (内存) | ❌ 清空 | 模型需重新加载到内存 |
+| 磁盘 CACHE_DIR/models/ | ✅ 保留 | 文件存在但当前代码未做磁盘预检 |
 
-| 脚本 | API | 说明 |
-|------|-----|------|
-| `predict_model.py` | `POST /v1/predict` | 单模型推理：下载模型 → 加载 → 推理 |
-| `run_server_workflow.py` | `POST /v1/workflow/execute` + `server_url` | 从主服务下载工作流 YAML 后执行 |
-| `run_custom_workflow.py` | `POST /v1/workflow/execute` + `yaml_content` | 直接传入 YAML 内容执行 |
+## API 端点
 
-## 运行
+| 端点 | 用途 |
+|------|------|
+| `POST /v1/workflow/execute` | 一站式执行（三级缓存查找） |
+| `POST /pipeline/load` | 预加载 workflow（支持 name 拉取模式） |
+| `POST /pipeline/refresh` | 强制刷新缓存 |
+| `POST /pipeline/execute` | 执行已预加载的 workflow |
+| `GET /pipeline/workflows` | 列出已加载的 workflow |
+
+## 运行示例
 
 ```bash
-# 1. 单模型推理
-python demo/predict_model.py
+# 1. 首次运行（需要 server 在线）
+python deploy/demo/run_workflow.py --image demo.jpg --mode first
 
-# 2. 从服务器加载工作流
-python demo/run_server_workflow.py
+# 2. 离线运行（使用缓存，可断开 server）
+python deploy/demo/run_workflow.py --image demo.jpg --mode offline
 
-# 3. 自定义 YAML（使用内嵌示例）
-python demo/run_custom_workflow.py
+# 3. 强制刷新
+python deploy/demo/run_workflow.py --image demo.jpg --mode refresh
 
-# 3b. 自定义 YAML（从文件读取）
-python demo/run_custom_workflow.py /path/to/my-pipeline.yaml
+# 4. 全部演示
+python deploy/demo/run_workflow.py --image demo.jpg --mode all
 ```
-
-## API 速查
-
-### 模型推理
-
-```json
-POST /v1/predict
-{
-  "model": "project_id/model_version",
-  "server_url": "http://127.0.0.1:9924",
-  "image_url": "https://example.com/test.jpg",
-  "confidence_threshold": 0.25
-}
-```
-
-### 工作流执行（服务端加载）
-
-```json
-POST /v1/workflow/execute
-{
-  "workflow": "demo-seg-pipeline",
-  "server_url": "http://127.0.0.1:9924",
-  "image_url": "https://example.com/test.jpg"
-}
-```
-
-### 工作流执行（自定义 YAML）
-
-```json
-POST /v1/workflow/execute
-{
-  "workflow": "my-pipeline",
-  "yaml_content": "version: '1.0'\nname: my-pipeline\npipeline:\n  ...",
-  "image_url": "https://example.com/test.jpg"
-}
-```
-
-也可在 test.html 页面上直接上传 `.yaml` 文件或粘贴 YAML 内容执行。

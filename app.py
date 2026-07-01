@@ -6015,6 +6015,7 @@ def wf_execute():
                 image_warning = f'图片下载失败: {url_err}'
 
         import asyncio
+        _t0 = time.perf_counter()
         engine_pool = _get_ml_engine_pool()
         yolo = _get_ml_yolo_adapter()
         vllm = _get_ml_vllm_client()
@@ -6063,6 +6064,7 @@ def wf_execute():
 
         result = asyncio.run(_run_with_autoload())
         result['workflow_id'] = name
+        result['execution_time_ms'] = round((time.perf_counter() - _t0) * 1000, 2)
         result['mode'] = 'local_engine'
         if image_warning:
             result.setdefault('warnings', []).append(image_warning)

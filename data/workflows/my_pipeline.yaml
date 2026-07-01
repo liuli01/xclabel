@@ -1,32 +1,31 @@
 version: '1.0'
 name: my_pipeline
 pipeline:
-- id: '3'
-  type: output
-  source:
-  - '2'
 - id: '1'
   type: input
-  input_type: upload
-- id: '5'
-  type: output
-  source:
-  - '4'
+  input_type: url
+  url: https://free.boltp.com/2026/06/29/6a42116caa1e2.webp
 - id: '2'
   type: yolo
   model: sv30_seg/20260618_172731
   task: segment
   params:
     conf: 0.25
-    iou: 0.5
+    iou: 0.6277777777777778
   source:
   - '1'
-- id: '4'
-  type: yolo
-  model: ocr_table/20260625_162438
-  task: segment
+- id: '6'
+  type: condition
+  expression: max_conf > 0.3
+  source:
+  - '2'
+- id: '5'
+  type: calc
+  expression: (width * height) / 100
+  condition: '6'
   params:
-    conf: 0.25
-    iou: 0.5
+    output_field: computed
+- id: '4'
+  type: output
   source:
-  - '1'
+  - '5'

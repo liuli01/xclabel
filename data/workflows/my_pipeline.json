@@ -1,42 +1,17 @@
 {
-  "last_node_id": 5,
-  "last_link_id": 6,
+  "last_node_id": 6,
+  "last_link_id": 10,
   "nodes": [
-    {
-      "id": 3,
-      "type": "xclabel/output",
-      "pos": [
-        979,
-        245
-      ],
-      "size": [
-        240,
-        200
-      ],
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [
-        {
-          "link": 5,
-          "name": "in",
-          "type": "*"
-        }
-      ],
-      "title": "Output [0ms]",
-      "properties": {},
-      "boxcolor": "#27ae60"
-    },
     {
       "id": 1,
       "type": "xclabel/input",
       "pos": [
-        321,
-        258
+        259,
+        191
       ],
       "size": [
-        210,
-        58
+        240,
+        200
       ],
       "flags": {},
       "order": 0,
@@ -44,8 +19,7 @@
       "outputs": [
         {
           "links": [
-            1,
-            3
+            1
           ],
           "name": "image",
           "slot_index": 0,
@@ -54,45 +28,20 @@
       ],
       "title": "Input [0ms]",
       "properties": {
-        "input_type": "upload",
-        "url": ""
+        "input_type": "url",
+        "url": "https://free.boltp.com/2026/06/29/6a42116caa1e2.webp"
       },
       "widgets_values": [
-        "upload"
+        "url"
       ],
-      "boxcolor": "#27ae60"
-    },
-    {
-      "id": 5,
-      "type": "xclabel/output",
-      "pos": [
-        985,
-        545
-      ],
-      "size": [
-        240,
-        200
-      ],
-      "flags": {},
-      "order": 4,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "in",
-          "type": "*",
-          "link": 6
-        }
-      ],
-      "title": "Output [0ms]",
-      "properties": {},
       "boxcolor": "#27ae60"
     },
     {
       "id": 2,
       "type": "xclabel/yolo",
       "pos": [
-        640,
-        243
+        584,
+        211
       ],
       "size": {
         "0": 210,
@@ -111,14 +60,14 @@
       "outputs": [
         {
           "links": [
-            5
+            9
           ],
           "name": "detections",
           "slot_index": 0,
           "type": "array"
         }
       ],
-      "title": "YOLO [2156ms]",
+      "title": "YOLO [258ms]",
       "properties": {
         "model": "sv30_seg/20260618_172731",
         "task": "segment",
@@ -128,53 +77,114 @@
       "widgets_values": [
         "segment",
         0.25,
-        0.5
+        0.6277777777777778
       ],
       "boxcolor": "#27ae60"
     },
     {
-      "id": 4,
-      "type": "xclabel/yolo",
+      "id": 6,
+      "type": "xclabel/condition",
       "pos": [
-        648,
-        458
+        864,
+        265
       ],
       "size": {
-        "0": 210,
-        "1": 106
+        "0": 140,
+        "1": 26
       },
       "flags": {},
       "order": 2,
       "mode": 0,
       "inputs": [
         {
-          "name": "image",
-          "type": "image",
-          "link": 3
+          "name": "in",
+          "type": "array",
+          "link": 9
         }
       ],
       "outputs": [
         {
-          "name": "detections",
-          "type": "array",
+          "name": "result",
+          "type": "boolean",
           "links": [
-            6
+            10
           ],
           "slot_index": 0
         }
       ],
-      "title": "YOLO [24654ms]",
+      "title": "Condition [0ms]",
       "properties": {
-        "model": "ocr_table/20260625_162438",
-        "task": "segment",
-        "conf": 0.25,
-        "iou": 0.5
+        "expression": "max_conf > 0.3"
       },
-      "widgets_values": [
-        "segment",
-        0.25,
-        0.5
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 5,
+      "type": "xclabel/calc",
+      "pos": [
+        1100,
+        247
       ],
+      "size": [
+        200,
+        70
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "link": null,
+          "name": "in",
+          "type": "array"
+        },
+        {
+          "link": 10,
+          "name": "trigger",
+          "type": "boolean"
+        }
+      ],
+      "outputs": [
+        {
+          "links": [
+            7
+          ],
+          "name": "out",
+          "slot_index": 0,
+          "type": "array"
+        }
+      ],
+      "title": "计算 [0ms]",
+      "properties": {
+        "expression": "(width * height) / 100",
+        "output_field": "computed",
+        "condition": "6"
+      },
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 4,
+      "type": "xclabel/output",
+      "pos": [
+        1398,
+        242
+      ],
+      "size": [
+        240,
+        200
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "link": 7,
+          "name": "in",
+          "type": "*"
+        }
+      ],
+      "title": "Output [0ms]",
+      "properties": {},
       "boxcolor": "#27ae60"
     }
   ],
@@ -188,28 +198,28 @@
       "image"
     ],
     [
-      3,
-      1,
+      7,
+      5,
       0,
       4,
       0,
-      "image"
+      "*"
     ],
     [
-      5,
+      9,
       2,
       0,
-      3,
+      6,
       0,
-      "*"
+      "array"
     ],
     [
+      10,
       6,
-      4,
       0,
       5,
-      0,
-      "*"
+      1,
+      "boolean"
     ]
   ],
   "groups": [],

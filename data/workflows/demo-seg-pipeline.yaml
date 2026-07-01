@@ -1,6 +1,10 @@
 version: '1.0'
 name: demo-seg-pipeline
 pipeline:
+- id: '1'
+  type: input
+  input_type: url
+  url: https://free.boltp.com/2026/06/29/6a42116caa1e2.webp
 - id: '2'
   type: yolo
   model: sv30_seg/20260618_172731
@@ -8,14 +12,13 @@ pipeline:
   params:
     conf: 0.25
     iou: 0.8923076923076924
-- id: '1'
-  type: input
-  input_type: url
-  url: https://free.boltp.com/2026/06/29/6a42116caa1e2.webp
-- id: '5'
-  type: output
   source:
-  - '4'
+  - '1'
+- id: '3'
+  type: condition
+  expression: max_conf > 0.3 and detection_count > 0
+  source:
+  - '2'
 - id: '4'
   type: vllm
   api_url: https://jcpt-open.cscec.com/aijsxmywyapi/0510250001/v1.0/qwen_vl_max_public
@@ -29,8 +32,7 @@ pipeline:
     temperature: 0.1
     max_tokens: 256
   condition: '3'
-- id: '3'
-  type: condition
-  expression: max_conf > 0.3 and detection_count > 0
+- id: '5'
+  type: output
   source:
-  - '2'
+  - '4'

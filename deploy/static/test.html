@@ -65,6 +65,58 @@
         .loading-overlay { display: none; position: absolute; inset: 0; background: rgba(255,255,255,.7); align-items: center; justify-content: center; z-index: 10; }
         .loading-overlay.show { display: flex; }
         .progress-step { font-size: 0.85em; color: #666; }
+        .cache-item { padding: 6px 8px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 4px; cursor: pointer; transition: all .1s; }
+        .cache-item:hover { border-color: #4096ff; background: #f6fbff; }
+        .cache-item .cache-name { font-weight: 500; }
+        .cache-item .cache-meta { color: #999; font-size: 0.88em; margin-top: 2px; }
+        .cache-item .cache-tag { display: inline-block; font-size: 0.72em; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+        .cache-item .cache-tag.ready { background: #f6ffed; color: #52c41a; }
+        .cache-item .cache-tag.mem { background: #e6f4ff; color: #1890ff; }
+        .cache-item .cache-tag.disk { background: #fff7e6; color: #d48806; }
+        .cache-yaml-preview { display: none; margin-top: 4px; padding: 6px 8px; background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; font-family: Consolas,monospace; font-size: 0.78em; line-height: 1.4; overflow-x: auto; white-space: pre; max-height: 300px; overflow-y: auto; }
+        .cache-yaml-preview.show { display: block; }
+        .cache-section-collapsed #wfSection, .cache-section-collapsed #modelSection { display: none !important; }
+        .cache-section-collapsed #wfSectionIcon, .cache-section-collapsed #modelSectionIcon { transform: rotate(-90deg); }
+        .model-disk-item { padding: 6px 8px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 4px; }
+        .model-disk-item .model-name { font-weight: 500; }
+        .model-disk-item .model-meta { color: #999; font-size: 0.88em; margin-top: 2px; }
+        .model-disk-item .model-files { font-size: 0.82em; color: #888; margin-top: 2px; }
+        .section-header { cursor: pointer; user-select: none; padding: 4px 0; }
+        .section-header:hover { color: #1677ff; }
+        .result-tabs { display: flex; gap: 0; margin-bottom: 10px; border-bottom: 2px solid #e8e8e8; }
+        .result-tab { padding: 6px 16px; font-size: 0.88em; cursor: pointer; color: #888; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; user-select: none; }
+        .result-tab:hover { color: #4096ff; }
+        .result-tab.active { color: #1677ff; border-bottom-color: #1677ff; font-weight: 500; }
+        .result-log { border: 1px solid #e8e8e8; border-radius: 6px; background: #fafafa; min-height: 300px; overflow: auto; font-size: 0.85em; }
+        .result-log .log-section { padding: 10px 14px; border-bottom: 1px solid #eee; }
+        .result-log .log-section:last-child { border-bottom: none; }
+        .result-log .log-section-title { font-size: 0.9em; font-weight: 600; color: #333; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+        .result-log .log-row { font-size: 0.85em; padding: 3px 0; display: flex; align-items: flex-start; gap: 8px; }
+        .result-log .log-row .label { color: #888; min-width: 80px; flex-shrink: 0; }
+        .result-log .log-row .value { color: #333; word-break: break-all; }
+        .result-log .log-row .value.mono { font-family: Consolas, monospace; }
+        .node-log-item { padding: 6px 8px; margin-bottom: 4px; border: 1px solid #e8e8e8; border-radius: 4px; background: #fff; }
+        .node-log-item .node-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
+        .node-log-item .node-header:hover { color: #1677ff; }
+        .node-log-item .node-header .node-name { font-weight: 500; font-size: 0.88em; }
+        .node-log-item .node-header .node-status { font-size: 0.8em; padding: 1px 8px; border-radius: 3px; }
+        .node-log-item .node-header .node-status.ok { background: #f6ffed; color: #52c41a; }
+        .node-log-item .node-header .node-status.error { background: #fff2f0; color: #ff4d4f; }
+        .node-log-item .node-header .node-status.skipped { background: #f5f5f5; color: #999; }
+        .node-log-item .node-detail { display: none; margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 0.85em; }
+        .node-log-item .node-detail.show { display: block; }
+        .result-log .log-empty { text-align: center; color: #bbb; padding: 40px; font-size: 0.88em; }
+        .debug-log { background: #fafafa; padding: 8px 10px; border-radius: 4px; font-size: 0.82em; max-height: 350px; overflow: auto; color: #333; font-family: Consolas, 'Courier New', monospace; line-height: 1.6; border: 1px solid #e8e8e8; }
+        .debug-log .log-line { padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
+        .debug-log .log-line:last-child { border-bottom: none; }
+        .debug-log .log-time { color: #999; margin-right: 6px; }
+        .debug-log .log-ok { color: #52c41a; }
+        .debug-log .log-error { color: #ff4d4f; }
+        .debug-log .log-warn { color: #faad14; }
+        .debug-log .log-info { color: #1677ff; }
+        .debug-log .log-running { color: #faad14; }
+        .debug-log .log-node { color: #722ed1; }
+        .debug-log .log-placeholder { color: #bbb; text-align: center; padding: 20px 0; }
         @media (max-width: 860px) { .panel-left { flex: 1 1 100%; } .panel-right { flex: 1 1 100%; } }
     </style>
 </head>
@@ -168,6 +220,42 @@
                 </div>
                 <div id="selectedEngineMeta" style="margin-top:8px;font-size:0.82em;color:#888;"></div>
             </div>
+
+            <!-- 缓存状态 -->
+            <div class="panel">
+                <h2><i class="fas fa-database"></i> 缓存状态 <span id="cacheSummary" style="font-weight:400;color:#999;font-size:0.85em;"></span></h2>
+                <div id="cachePanel" style="font-size:0.85em;">
+                    <div class="empty-state" style="padding:12px 0;" id="cacheLoading">
+                        <span class="spinner"></span> 加载中...
+                    </div>
+                    <div id="cacheContent" style="display:none;">
+                        <!-- Workflows -->
+                        <div style="margin-bottom:8px;">
+                            <div class="flex-between" style="cursor:pointer;" onclick="toggleCacheSection('wfSection')">
+                                <span><i id="wfSectionIcon" class="fas fa-chevron-down"></i> <strong>Workflows</strong></span>
+                                <span id="wfCacheCount" style="color:#999;font-size:0.85em;"></span>
+                            </div>
+                            <div id="wfSection" style="margin-top:4px;">
+                                <div id="wfCacheList"></div>
+                            </div>
+                        </div>
+                        <!-- Models -->
+                        <div>
+                            <div class="flex-between" style="cursor:pointer;" onclick="toggleCacheSection('modelSection')">
+                                <span><i id="modelSectionIcon" class="fas fa-chevron-down"></i> <strong>Models</strong></span>
+                                <span id="modelCacheCount" style="color:#999;font-size:0.85em;"></span>
+                            </div>
+                            <div id="modelSection" style="margin-top:4px;">
+                                <div id="modelCacheList"></div>
+                                <div style="margin-top:6px;display:flex;gap:4px;">
+                                    <button class="btn btn-danger" style="font-size:0.78em;padding:2px 8px;" onclick="clearModelCache()"><i class="fas fa-trash-alt"></i> 清除缓存</button>
+                                    <span id="clearModelStatus" style="font-size:0.78em;color:#999;margin-left:4px;align-self:center;"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- 右侧面板：推理测试 -->
@@ -200,6 +288,12 @@
                     <span id="inferStatus" style="font-size:0.85em;color:#999;"></span>
                 </div>
 
+                <!-- 运行结果 / 运行日志 标签页 -->
+                <div class="result-tabs" id="resultTabs" style="display:none;">
+                    <span class="result-tab active" onclick="switchResultTab('result')">运行结果</span>
+                    <span class="result-tab" onclick="switchResultTab('log')">运行日志</span>
+                </div>
+
                 <div class="result-area" id="resultArea">
                     <canvas id="resultCanvas"></canvas>
                     <div class="placeholder" id="resultPlaceholder">
@@ -220,6 +314,11 @@
                     </div>
                     <pre id="jsonOutput"></pre>
                 </div>
+
+                <!-- 运行日志面板 -->
+                <div class="debug-log" id="resultLogPanel" style="display:none;">
+                    <div class="log-placeholder">暂无执行日志</div>
+                </div>
             </div>
         </div>
     </div>
@@ -233,6 +332,7 @@
         let selectedEngineId = null;
         let currentImageData = null;   // base64 data URL
         let currentResult = null;
+        let currentResultData = null;  // full API response (for log tab)
         let currentTaskType = 'detect';
         let deployBase = '';           // same-origin
 
@@ -435,6 +535,9 @@
                 `;
                 status.textContent = '✅ 完成 (' + currentResult.length + ' 个目标)';
 
+                // 单次推理，隐藏工作流标签页
+                document.getElementById('resultTabs').style.display = 'none';
+
                 await refreshEngines();
             } catch (e) {
                 toast('❌ ' + e.message);
@@ -451,9 +554,61 @@
             canvas.style.display = 'none';
             placeholder.style.display = 'block';
             document.getElementById('resultJsonPanel').style.display = 'none';
+            document.getElementById('resultLogPanel').style.display = 'none';
+            document.getElementById('resultTabs').style.display = 'none';
             document.getElementById('resultInfo').innerHTML = '';
             document.getElementById('inferStatus').textContent = '';
             currentResult = null;
+            currentResultData = null;
+        }
+
+        // ── Result Tabs ──
+        function switchResultTab(tab) {
+            document.querySelectorAll('.result-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.result-tab[onclick*="'${tab}'"]`).classList.add('active');
+
+            const resultArea = document.getElementById('resultArea');
+            const jsonPanel = document.getElementById('resultJsonPanel');
+            const logPanel = document.getElementById('resultLogPanel');
+            const resultInfo = document.getElementById('resultInfo');
+
+            if (tab === 'result') {
+                resultArea.style.display = '';
+                jsonPanel.style.display = currentResultData ? '' : 'none';
+                logPanel.style.display = 'none';
+                resultInfo.style.display = '';
+            } else {
+                resultArea.style.display = 'none';
+                jsonPanel.style.display = 'none';
+                logPanel.style.display = 'block';
+                resultInfo.style.display = 'none';
+            }
+        }
+
+        // ── Run Log (复用 workflow.html 的日志模式) ──
+        function addLog(msg, cls) {
+            const log = document.getElementById('resultLogPanel');
+            log.style.display = 'block';
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            const d = new Date();
+            const time = ('0'+d.getHours()).slice(-2)+':'+
+                         ('0'+d.getMinutes()).slice(-2)+':'+
+                         ('0'+d.getSeconds()).slice(-2);
+            line.innerHTML = '<span class="log-time">['+time+']</span><span class="'+cls+'">'+msg+'</span>';
+            log.appendChild(line);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function clearLog() {
+            const log = document.getElementById('resultLogPanel');
+            log.innerHTML = '<div class="log-placeholder">暂无执行日志</div>';
+            log.style.display = 'none';
+        }
+
+        function formatNodeType(type) {
+            const map = {input:'输入', yolo:'YOLO检测', condition:'条件判断', calc:'计算', vllm:'VLM分析', output:'结果输出'};
+            return map[type] || type;
         }
 
         // ── Render result on canvas ──
@@ -607,6 +762,9 @@
                 status.textContent = '✅ 完成';
                 toast('预测完成');
 
+                // 单次预测，隐藏工作流标签页
+                document.getElementById('resultTabs').style.display = 'none';
+
                 // Refresh engine list (new engine may have been loaded)
                 await refreshEngines();
                 checkHealth();
@@ -675,6 +833,11 @@
             btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 执行中...';
             status.textContent = '下载工作流 + 推理中...';
 
+            // 初始化日志
+            clearLog();
+            addLog('🚀 开始执行工作流 <b>'+workflow+'</b>', 'log-info');
+            addLog('📎 输入来源: 上传图片', 'log-info');
+
             try {
                 const body = {
                     workflow: workflow,
@@ -689,6 +852,7 @@
 
                 const loading = document.getElementById('inferLoading');
                 loading.classList.add('show');
+                addLog('⏳ 请求已发送，等待引擎响应...', 'log-running');
 
                 const r = await fetch(deployBase + '/v1/workflow/execute', {
                     method: 'POST',
@@ -697,6 +861,77 @@
                 });
                 const data = await r.json();
                 if (!r.ok) throw new Error(data.detail || '执行失败');
+
+                addLog('', ''); // spacer
+
+                // ── 解析并展示节点执行日志 ──
+                const nodeOutputs = data.node_outputs || {};
+                const nodeTimings = data.node_timings || {};
+                const nodeStatus = data.node_status || {};
+                const nodeOrder = Object.keys(nodeOutputs);
+
+                nodeOrder.forEach(function(nid) {
+                    const timing = nodeTimings[nid] || 0;
+                    const status = nodeStatus[nid] || 'ok';
+                    const timingStr = timing ? ' ('+timing.toFixed(1)+'ms)' : '';
+                    const out = nodeOutputs[nid] || {};
+                    const detCount = out.detections ? out.detections.length : 0;
+                    const nodeLabel = '节点 <b>'+nid+'</b>';
+
+                    if (status === 'error') {
+                        addLog('❌ '+nodeLabel+' 执行失败'+timingStr, 'log-error');
+                    } else if (status === 'skipped') {
+                        addLog('⏭️ '+nodeLabel+' 已跳过', 'log-warn');
+                    } else {
+                        let detail = '';
+                        if (detCount > 0) {
+                            detail = ' 检测到 <b>'+detCount+'</b> 个目标';
+                        }
+                        if (out.max_conf !== undefined) {
+                            detail += ' 最高置信度: '+(out.max_conf*100).toFixed(1)+'%';
+                        }
+                        if (out.vllm_result) {
+                            const txt = out.vllm_result.substring(0, 80);
+                            detail += ' VLM: '+txt+(out.vllm_result.length>80?'...':'');
+                        }
+                        if (out.computed_values) {
+                            detail += ' 计算值: '+out.computed_values.length+' 个';
+                        }
+                        if (out.skipped) {
+                            addLog('⏭️ '+nodeLabel+' 条件未满足，已跳过'+timingStr, 'log-warn');
+                        } else {
+                            addLog('✅ '+nodeLabel+' 执行完成'+timingStr+' '+detail, 'log-ok');
+                        }
+                    }
+                });
+
+                // ── 摘要 ──
+                addLog('', '');
+                const totalMs = data.execution_time_ms || 0;
+                const errList = data.errors || [];
+                const warnList = data.warnings || [];
+                const detCount = data.detection_count || 0;
+                addLog('📊 总耗时: <b>'+totalMs+'ms</b> | 检测目标: '+detCount+
+                    (errList.length ? ' | ❌ 错误: <b>'+errList.length+'</b>' : '') +
+                    (warnList.length ? ' | ⚠️ 警告: '+warnList.length : ''), 'log-info');
+
+                if (warnList.length > 0) {
+                    addLog('', '');
+                    warnList.forEach(function(w) {
+                        addLog('⚠️ '+w, 'log-warn');
+                    });
+                }
+                if (errList.length > 0) {
+                    addLog('', '');
+                    errList.forEach(function(e) {
+                        addLog('❌ '+e, 'log-error');
+                    });
+                }
+
+                // ── 保存完整结果，显示标签页 ──
+                currentResultData = data;
+                document.getElementById('resultTabs').style.display = 'flex';
+                switchResultTab('result');
 
                 // Display result in JSON panel
                 document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
@@ -715,10 +950,10 @@
                 toast('工作流执行完成');
 
                 // Render annotated image on canvas if available
-                const nodeOutputs = data.node_outputs || {};
+                const nodeOutputs2 = data.node_outputs || {};
                 let annotatedImgSrc = null;
-                for (const nid in nodeOutputs) {
-                    const out = nodeOutputs[nid];
+                for (const nid in nodeOutputs2) {
+                    const out = nodeOutputs2[nid];
                     if (out.annotated_image) {
                         annotatedImgSrc = 'data:image/jpeg;base64,' + out.annotated_image;
                         break;
@@ -735,6 +970,7 @@
                 await refreshEngines();
                 checkHealth();
             } catch (e) {
+                addLog('❌ 执行失败: '+e.message, 'log-error');
                 toast('❌ ' + e.message);
                 status.textContent = '❌ 失败';
             } finally {
@@ -799,11 +1035,174 @@
             img.src = imageSrc;
         }
 
-        // ── Init ──
+        // ── Cache Panel ──
+        let cacheData = null;
+
+        function toggleCacheSection(id) {
+            const section = document.getElementById(id);
+            const parent = section.parentElement;
+            if (section.style.display === 'none') {
+                section.style.display = 'block';
+                parent.classList.remove('cache-section-collapsed');
+            } else {
+                section.style.display = 'none';
+                parent.classList.add('cache-section-collapsed');
+            }
+        }
+
+        async function refreshCache() {
+            try {
+                const r = await fetch(deployBase + '/cache');
+                const data = await r.json();
+                cacheData = data;
+                renderCache(data);
+            } catch (e) {
+                document.getElementById('cacheSummary').textContent = '❌ 获取失败';
+            }
+        }
+
+        function renderCache(data) {
+            const loading = document.getElementById('cacheLoading');
+            const content = document.getElementById('cacheContent');
+            loading.style.display = 'none';
+            content.style.display = 'block';
+
+            // Summary
+            const diskWf = data.workflows.disk_count || 0;
+            const memWf = data.workflows.memory_count || 0;
+            const diskMod = data.models.disk_count || 0;
+            const memMod = data.models.memory_count || 0;
+            document.getElementById('cacheSummary').textContent =
+                `WF ${diskWf}💾${memWf}🧠 | 模型 ${diskMod}💾${memMod}🧠`;
+
+            // Workflow counts
+            document.getElementById('wfCacheCount').textContent =
+                `💾${diskWf} 🧠${memWf}`;
+
+            // Render workflow disk cache
+            const wfList = document.getElementById('wfCacheList');
+            const wfDisk = data.workflows.disk || [];
+            if (!wfDisk.length) {
+                wfList.innerHTML = '<div style="color:#bbb;padding:4px 0;font-size:0.85em;">暂无缓存</div>';
+            } else {
+                const memSet = new Set(data.workflows.memory || []);
+                wfList.innerHTML = wfDisk.map(wf => {
+                    const inMem = memSet.has(wf.name);
+                    return `<div class="cache-item" onclick="toggleWorkflowYaml('${wf.name}', this)">
+                        <div>
+                            <span class="cache-name">${wf.name}</span>
+                            <span class="cache-tag disk">💾 磁盘</span>
+                            ${inMem ? '<span class="cache-tag mem">🧠 内存</span>' : ''}
+                            <span style="color:#bbb;font-size:0.78em;float:right;">${wf.size_display}</span>
+                        </div>
+                        <div class="cache-meta">${wf.file}</div>
+                        <div class="cache-yaml-preview" id="yamlPreview_${wf.name}"></div>
+                    </div>`;
+                }).join('');
+            }
+
+            // Render workflow memory-only (not on disk)
+            const onlyMem = (data.workflows.memory || []).filter(n => !wfDisk.find(w => w.name === n));
+            if (onlyMem.length) {
+                const memHtml = onlyMem.map(n =>
+                    `<div class="cache-item" style="cursor:default;">
+                        <span class="cache-name">${n}</span>
+                        <span class="cache-tag mem">🧠 内存</span>
+                    </div>`
+                ).join('');
+                wfList.innerHTML += memHtml;
+            }
+
+            // Model counts
+            document.getElementById('modelCacheCount').textContent =
+                `💾${diskMod} 🧠${memMod}`;
+
+            // Render model disk cache
+            const modelList = document.getElementById('modelCacheList');
+            const mDisk = data.models.disk || [];
+            if (!mDisk.length && !memMod) {
+                modelList.innerHTML = '<div style="color:#bbb;padding:4px 0;font-size:0.85em;">暂无缓存</div>';
+            } else {
+                // Disk models
+                modelList.innerHTML = mDisk.map(m => {
+                    const taskTag = m.task_type && m.task_type !== '?' ? ` [${m.task_type}]` : '';
+                    const hasModel = m.has_model ? '<span class="cache-tag ready">✅</span>' : '<span class="cache-tag" style="background:#fff0f0;color:#ff4d4f;">❌</span>';
+                    const files = (m.files || []).join(', ');
+                    return `<div class="model-disk-item">
+                        <div>
+                            <span class="model-name">${m.project_id}/${m.version}</span>
+                            ${hasModel}
+                            <span style="color:#bbb;font-size:0.78em;float:right;">${taskTag}</span>
+                        </div>
+                        <div class="model-meta">${m.directory}</div>
+                        <div class="model-files">${files}</div>
+                    </div>`;
+                }).join('');
+                // Memory-only models
+                const memModelIds = new Set((data.models.memory || []).map(e => e.engine_id));
+                const diskModelIds = new Set(mDisk.map(m => `${m.project_id}/${m.version}`));
+                const onlyMemModels = (data.models.memory || []).filter(e => !diskModelIds.has(e.engine_id));
+                if (onlyMemModels.length) {
+                    modelList.innerHTML += '<div style="margin-top:6px;font-size:0.85em;color:#999;">内存中（未缓存到磁盘）:</div>';
+                    modelList.innerHTML += onlyMemModels.map(e =>
+                        `<div class="cache-item" style="cursor:default;">
+                            <span class="cache-name">${e.engine_id}</span>
+                            <span class="cache-tag mem">🧠 内存</span>
+                            <span style="color:#bbb;font-size:0.78em;">${e.task_type}</span>
+                        </div>`
+                    ).join('');
+                }
+            }
+        }
+
+        function toggleWorkflowYaml(name, el) {
+            const preview = document.getElementById('yamlPreview_' + name);
+            if (preview.classList.contains('show')) {
+                preview.classList.remove('show');
+                return;
+            }
+            // Find the cached data
+            const wf = (cacheData?.workflows?.disk || []).find(w => w.name === name);
+            if (wf && wf.yaml_content) {
+                preview.textContent = wf.yaml_content;
+                preview.classList.add('show');
+            } else {
+                preview.textContent = '(YAML 内容不可用)';
+                preview.classList.add('show');
+            }
+        }
+
+        async function clearModelCache() {
+            if (!confirm('确定清除所有模型缓存？\n（内存和磁盘上的模型都将被删除）')) return;
+            const btn = document.querySelector('#modelSection .btn-danger');
+            const status = document.getElementById('clearModelStatus');
+            btn.disabled = true;
+            status.textContent = '清除中...';
+            try {
+                const r = await fetch(deployBase + '/cache/models/clear', { method: 'POST' });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.detail || '清除失败');
+                status.textContent = `✅ 已清除 ${data.removed_from_disk?.length || 0} 个磁盘缓存`;
+                toast(`已清除 ${data.removed_from_memory} 个内存 + ${data.removed_from_disk?.length || 0} 个磁盘模型`);
+                await refreshCache();
+                await refreshEngines();
+                checkHealth();
+            } catch (e) {
+                status.textContent = '❌ ' + e.message;
+                toast('❌ ' + e.message);
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => { status.textContent = ''; }, 3000);
+            }
+        }
+
+        // ── Extend init ──
         async function init() {
             await checkHealth();
             await refreshEngines();
+            await refreshCache();
             setInterval(() => { checkHealth(); refreshEngines(); }, 15000);
+            setInterval(() => refreshCache(), 10000);
         }
         init();
     </script>

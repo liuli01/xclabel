@@ -4,7 +4,7 @@ pipeline:
 - id: '1'
   type: input
   input_type: url
-  url: https://free.boltp.com/2026/06/29/6a42116caa1e2.webp
+  url: https://free.boltp.com/2026/07/01/6a4478e0c1a1c.webp
 - id: '2'
   type: yolo
   model: sv30_seg/20260618_172731
@@ -14,14 +14,15 @@ pipeline:
     iou: 0.5
   source:
   - '1'
-- id: '12'
-  type: output
-  source:
-  - '11'
-- id: '11'
+- id: '3'
   type: calc
-  expression: (width * height) / 100
+  expression: height/930
+  condition: ''
   params:
     output_field: computed
   source:
   - '2'
+- id: '4'
+  type: output
+  source:
+  - '3'

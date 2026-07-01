@@ -1,13 +1,13 @@
 {
-  "last_node_id": 12,
-  "last_link_id": 12,
+  "last_node_id": 4,
+  "last_link_id": 3,
   "nodes": [
     {
       "id": 1,
       "type": "xclabel/input",
       "pos": [
-        436,
-        163
+        668,
+        184
       ],
       "size": [
         240,
@@ -29,7 +29,7 @@
       "title": "Input [0ms]",
       "properties": {
         "input_type": "url",
-        "url": "https://free.boltp.com/2026/06/29/6a42116caa1e2.webp"
+        "url": "https://free.boltp.com/2026/07/01/6a4478e0c1a1c.webp"
       },
       "widgets_values": [
         "url"
@@ -40,8 +40,8 @@
       "id": 2,
       "type": "xclabel/yolo",
       "pos": [
-        780,
-        176
+        936,
+        214
       ],
       "size": {
         "0": 210,
@@ -60,14 +60,14 @@
       "outputs": [
         {
           "links": [
-            11
+            2
           ],
           "name": "detections",
           "slot_index": 0,
           "type": "array"
         }
       ],
-      "title": "YOLO [407ms]",
+      "title": "YOLO [557ms]",
       "properties": {
         "model": "sv30_seg/20260618_172731",
         "task": "segment",
@@ -82,34 +82,11 @@
       "boxcolor": "#27ae60"
     },
     {
-      "id": 12,
-      "type": "xclabel/output",
-      "pos": [
-        1434,
-        211
-      ],
-      "size": [
-        240,
-        200
-      ],
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "in",
-          "type": "*",
-          "link": 12
-        }
-      ],
-      "properties": {}
-    },
-    {
-      "id": 11,
+      "id": 3,
       "type": "xclabel/calc",
       "pos": [
-        1087,
-        214
+        1235,
+        235
       ],
       "size": [
         200,
@@ -120,25 +97,58 @@
       "mode": 0,
       "inputs": [
         {
+          "link": 2,
           "name": "in",
-          "type": "array",
-          "link": 11
+          "type": "array"
+        },
+        {
+          "link": null,
+          "name": "trigger",
+          "type": "boolean"
         }
       ],
       "outputs": [
         {
-          "name": "out",
-          "type": "array",
           "links": [
-            12
+            3
           ],
-          "slot_index": 0
+          "name": "out",
+          "slot_index": 0,
+          "type": "array"
         }
       ],
+      "title": "计算 [0ms]",
       "properties": {
-        "expression": "(width * height) / 100",
-        "output_field": "computed"
-      }
+        "expression": "height/930",
+        "output_field": "computed",
+        "condition": ""
+      },
+      "boxcolor": "#27ae60"
+    },
+    {
+      "id": 4,
+      "type": "xclabel/output",
+      "pos": [
+        1477,
+        260
+      ],
+      "size": [
+        240,
+        200
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "link": 3,
+          "name": "in",
+          "type": "*"
+        }
+      ],
+      "title": "Output [0ms]",
+      "properties": {},
+      "boxcolor": "#27ae60"
     }
   ],
   "links": [
@@ -151,18 +161,18 @@
       "image"
     ],
     [
-      11,
+      2,
       2,
       0,
-      11,
+      3,
       0,
       "array"
     ],
     [
-      12,
-      11,
+      3,
+      3,
       0,
-      12,
+      4,
       0,
       "*"
     ]

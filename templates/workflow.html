@@ -66,7 +66,7 @@ width:270px;background:#16213e;border-left:1px solid #0f3460;
 overflow:hidden;transition:width .2s;flex-shrink:0;display:flex;flex-direction:column
 }
 .props-sidebar.collapsed{width:0;border-left:none;overflow:hidden !important}
-.props-sidebar:not(.collapsed){overflow-y:auto}
+.props-sidebar>.props-content{flex:1;overflow-y:auto;overflow-x:hidden}
 .toggle-btn{
 position:absolute;right:0;top:12px;width:18px;height:28px;background:#16213e;
 border:1px solid #0f3460;border-right:none;border-radius:4px 0 0 4px;
@@ -185,12 +185,13 @@ transition:height .25s;flex-shrink:0;font-family:Consolas,'Courier New',monospac
 
 /* ── Props sidebar tabs ── */
 .props-tabs{display:flex;border-bottom:1px solid #0f3460;flex-shrink:0}
-.props-tab{padding:8px 14px;font-size:.76em;cursor:pointer;color:#888;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:4px}
+.props-tab{padding:8px 8px;font-size:.72em;cursor:pointer;color:#888;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:3px;white-space:nowrap}
 .props-tab:hover{color:#e0e0e0}
 .props-tab.active{color:#e94560;border-bottom-color:#e94560}
+.props-tab:last-child{padding:8px 6px;min-width:auto}
 
 /* ── Result panel ── */
-.result-panel{display:none;flex:1;overflow-y:auto;padding:0}
+.result-panel{display:none;min-height:0;flex:1;padding:0;overflow-y:auto}
 .result-panel.open{display:block}
 .result-empty{padding:20px 12px;color:#666;font-size:.8em;text-align:center}
 .result-summary{padding:8px 12px;background:#0d1b2a;border-bottom:1px solid #0f3460;font-size:.74em;display:flex;gap:16px;flex-wrap:wrap}
@@ -209,6 +210,7 @@ transition:height .25s;flex-shrink:0;font-family:Consolas,'Courier New',monospac
 .result-node .node-detail .det-row{padding:1px 0;color:#aaa}
 .result-node .node-detail .det-row .cls{color:#4caf50}
 .result-node .node-detail .det-row .conf{color:#ffa726}
+#sidebarLogPanel .debug-log{margin:8px;max-height:none}
 </style>
 </head>
 <body>
@@ -290,9 +292,9 @@ iou: 0.5
 };
 this.addInput('image', 'image');
 this.addOutput('detections', 'array');
-this.addWidget('combo', 'task', this.properties.task, function(v){ this.properties.task = v; }, { values: ['detect', 'segment', 'pose'] });
-this.addWidget('slider', 'conf', this.properties.conf, function(v){ this.properties.conf = v; }, { min: 0, max: 1, step: 0.05 });
-this.addWidget('slider', 'iou', this.properties.iou, function(v){ this.properties.iou = v; }, { min: 0, max: 1, step: 0.05 });
+this.addWidget('combo', 'task', this.properties.task, (v) => { this.properties.task = v; }, { values: ['detect', 'segment', 'pose'] });
+this.addWidget('slider', 'conf', this.properties.conf, (v) => { this.properties.conf = v; }, { min: 0, max: 1, step: 0.05 });
+this.addWidget('slider', 'iou', this.properties.iou, (v) => { this.properties.iou = v; }, { min: 0, max: 1, step: 0.05 });
 this.serialize_widgets = true;
 this.size = this.computeSize();
 }
@@ -383,7 +385,7 @@ input_type: 'upload',
 url: '',
 };
 this.addOutput('image', 'image');
-this.addWidget('combo', 'type', this.properties.input_type, function(v){
+this.addWidget('combo', 'type', this.properties.input_type, (v) => {
 this.properties.input_type = v;
 if(selectedNode === this) showProperties(this);
 }, { values: ['upload', 'url', 'stream'] });
@@ -540,6 +542,7 @@ tabBar.className = 'props-tabs';
 tabBar.innerHTML =
   '<div class="props-tab active" data-tab="props" onclick="switchPropsTab(\'props\')"><i class="fas fa-sliders-h"></i> 属性</div>' +
   '<div class="props-tab" data-tab="result" onclick="switchPropsTab(\'result\')"><i class="fas fa-chart-bar"></i> 运行结果</div>' +
+  '<div class="props-tab" data-tab="log" onclick="switchPropsTab(\'log\')"><i class="fas fa-terminal"></i> 运行日志</div>' +
   '<div class="props-tab" onclick="toggleSidebar()" title="收起侧栏" style="margin-left:auto;cursor:pointer;padding:8px 10px;flex-shrink:0"><i class="fas fa-chevron-right"></i></div>';
 propsPanel.appendChild(tabBar);
 
@@ -550,18 +553,30 @@ propsTitle.style.cssText = 'padding:8px 12px;font-size:.82em;color:#e94560;displ
 propsTitle.innerHTML = '<i class="fas fa-sliders-h"></i> 属性';
 propsPanel.appendChild(propsTitle);
 
+// Content wrapper (ensures tab bar + title stay fixed, only content scrolls)
+var propsContentWrap = document.createElement('div');
+propsContentWrap.className = 'props-content';
+propsPanel.appendChild(propsContentWrap);
+
 // Properties content
 var propsContent = document.createElement('div');
 propsContent.id = 'propsContent';
 propsContent.innerHTML = '<div class="no-selection">点击节点编辑属性</div>';
-propsPanel.appendChild(propsContent);
+propsContentWrap.appendChild(propsContent);
 
 // Result panel (hidden by default)
 var resultPanel = document.createElement('div');
 resultPanel.className = 'result-panel';
 resultPanel.id = 'resultPanel';
 resultPanel.innerHTML = '<div class="result-empty">尚未执行工作流</div>';
-propsPanel.appendChild(resultPanel);
+propsContentWrap.appendChild(resultPanel);
+
+// Log panel (hidden by default)
+var sidebarLogPanel = document.createElement('div');
+sidebarLogPanel.className = 'result-panel';
+sidebarLogPanel.id = 'sidebarLogPanel';
+sidebarLogPanel.innerHTML = '<div class="debug-log" id="sidebarLogContent"><div class="log-placeholder">尚未执行工作流</div></div>';
+propsContentWrap.appendChild(sidebarLogPanel);
 
 content.appendChild(propsPanel);
 
@@ -706,6 +721,7 @@ function switchPropsTab(tab){
   });
   document.getElementById('propsContent').style.display = (tab === 'props') ? 'block' : 'none';
   document.getElementById('resultPanel').classList.toggle('open', tab === 'result');
+  document.getElementById('sidebarLogPanel').classList.toggle('open', tab === 'log');
   // Ensure sidebar is open when switching tabs
   var side = document.getElementById('propsSidebar');
   if(side.classList.contains('collapsed')) toggleSidebar();
@@ -1331,7 +1347,7 @@ body: JSON.stringify(payload)
 })
 .then(function(r){ return r.json(); })
 .then(function(data){
-document.getElementById('runStatus').textContent = '✅ 完成 ('+data.execution_time_ms+'ms)';
+document.getElementById('runStatus').textContent = '✅ 完成 ('+(data.execution_time_ms||0)+'ms)';
 addLog('', ''); // spacer
 
 // Show each node execution log
@@ -1387,7 +1403,24 @@ addLog('⚠️ '+e, 'log-error');
 });
 }
 
-	// Colorize nodes by status
+		// Copy logs to sidebar log panel
+		var sidebarLog = document.getElementById('sidebarLogContent');
+		if(sidebarLog){
+		  sidebarLog.innerHTML = '';
+		  var modalLog = document.getElementById('runLog');
+		  if(modalLog){
+		    var entries = modalLog.querySelectorAll('.log-line');
+		    entries.forEach(function(entry){
+		      var clone = entry.cloneNode(true);
+		      sidebarLog.appendChild(clone);
+		    });
+		    if(!entries.length){
+		      sidebarLog.innerHTML = '<div class="log-placeholder" style="display:block">暂无日志</div>';
+		    }
+		  }
+		}
+
+// Colorize nodes by status
 	var statusColors = {'ok': '#27ae60', 'error': '#e74c3c', 'skipped': '#f39c12'};
 	if(graph && graph._nodes){
 	  graph._nodes.forEach(function(n){
