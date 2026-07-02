@@ -75,6 +75,8 @@
         .cache-item .cache-tag.disk { background: #fff7e6; color: #d48806; }
         .cache-yaml-preview { display: none; margin-top: 4px; padding: 6px 8px; background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; font-family: Consolas,monospace; font-size: 0.78em; line-height: 1.4; overflow-x: auto; white-space: pre; max-height: 300px; overflow-y: auto; }
         .cache-yaml-preview.show { display: block; }
+        .cache-yaml-actions { display: none; margin-top: 6px; gap: 6px; }
+        .cache-yaml-actions.show { display: flex; flex-wrap: wrap; }
         .cache-section-collapsed #wfSection, .cache-section-collapsed #modelSection { display: none !important; }
         .cache-section-collapsed #wfSectionIcon, .cache-section-collapsed #modelSectionIcon { transform: rotate(-90deg); }
         .model-disk-item { padding: 6px 8px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 4px; }
@@ -1088,15 +1090,16 @@
                 const memSet = new Set(data.workflows.memory || []);
                 wfList.innerHTML = wfDisk.map(wf => {
                     const inMem = memSet.has(wf.name);
-                    return `<div class="cache-item" onclick="toggleWorkflowYaml('${wf.name}', this)">
-                        <div>
+                    return `<div class="cache-item">
+                        <div onclick="toggleWorkflowYaml('${wf.name}')" style="cursor:pointer;">
                             <span class="cache-name">${wf.name}</span>
                             <span class="cache-tag disk">💾 磁盘</span>
                             ${inMem ? '<span class="cache-tag mem">🧠 内存</span>' : ''}
                             <span style="color:#bbb;font-size:0.78em;float:right;">${wf.size_display}</span>
                         </div>
-                        <div class="cache-meta">${wf.file}</div>
+                        <div class="cache-meta" onclick="toggleWorkflowYaml('${wf.name}')" style="cursor:pointer;">${wf.file}</div>
                         <div class="cache-yaml-preview" id="yamlPreview_${wf.name}"></div>
+                        <div class="cache-yaml-actions" id="yamlActions_${wf.name}"></div>
                     </div>`;
                 }).join('');
             }
@@ -1155,17 +1158,80 @@
             }
         }
 
-        function toggleWorkflowYaml(name, el) {
+        function toggleWorkflowYaml(name) {
             const preview = document.getElementById('yamlPreview_' + name);
-            if (preview.classList.contains('show')) {
+            const actions = document.getElementById('yamlActions_' + name);
+            const isShowing = preview.classList.contains('show');
+
+            // Toggle both preview and actions together
+            if (isShowing) {
                 preview.classList.remove('show');
+                actions.classList.remove('show');
                 return;
             }
+
             // Find the cached data
             const wf = (cacheData?.workflows?.disk || []).find(w => w.name === name);
             if (wf && wf.yaml_content) {
-                preview.textContent = wf.yaml_content;
+                // Check if textarea already exists
+                let textarea = preview.querySelector('textarea');
+                if (!textarea) {
+                    preview.innerHTML = '';
+                    textarea = document.createElement('textarea');
+                    textarea.value = wf.yaml_content;
+                    textarea.style.width = '100%';
+                    textarea.style.minHeight = '200px';
+                    textarea.style.fontFamily = 'Consolas,monospace';
+                    textarea.style.fontSize = '0.82em';
+                    textarea.style.padding = '6px';
+                    textarea.style.border = '1px solid #d9d9d9';
+                    textarea.style.borderRadius = '4px';
+                    textarea.style.resize = 'vertical';
+                    preview.appendChild(textarea);
+
+                    // Buttons go into the actions container (outside scrollable preview)
+                    actions.innerHTML = '';
+
+                    const applyBtn = document.createElement('button');
+                    applyBtn.className = 'btn btn-primary';
+                    applyBtn.innerHTML = '🔄 应用到执行表单';
+                    applyBtn.onclick = function() {
+                        document.getElementById('wfYamlContent').value = textarea.value;
+                        const section = document.getElementById('wfYamlSection');
+                        section.style.display = 'block';
+                        document.getElementById('wfYamlToggleIcon').textContent = '▼';
+                        document.getElementById('wfName').value = name;
+                        toast('✅ YAML 已应用到执行表单');
+                    };
+                    actions.appendChild(applyBtn);
+
+                    const saveBtn = document.createElement('button');
+                    saveBtn.className = 'btn btn-success';
+                    saveBtn.innerHTML = '💾 保存到缓存';
+                    saveBtn.onclick = async function() {
+                        saveBtn.disabled = true;
+                        saveBtn.innerHTML = '⏳ 保存中...';
+                        try {
+                            const r = await fetch(deployBase + '/cache/workflows/save', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: name, yaml_content: textarea.value }),
+                            });
+                            const data = await r.json();
+                            if (!r.ok) throw new Error(data.detail || '保存失败');
+                            toast('✅ 已保存到缓存: ' + name);
+                            await refreshCache();
+                        } catch (e) {
+                            toast('❌ ' + e.message);
+                        } finally {
+                            saveBtn.disabled = false;
+                            saveBtn.innerHTML = '💾 保存到缓存';
+                        }
+                    };
+                    actions.appendChild(saveBtn);
+                }
                 preview.classList.add('show');
+                actions.classList.add('show');
             } else {
                 preview.textContent = '(YAML 内容不可用)';
                 preview.classList.add('show');
@@ -1202,7 +1268,7 @@
             await refreshEngines();
             await refreshCache();
             setInterval(() => { checkHealth(); refreshEngines(); }, 15000);
-            setInterval(() => refreshCache(), 10000);
+            setInterval(() => refreshCache(), 60000);
         }
         init();
     </script>

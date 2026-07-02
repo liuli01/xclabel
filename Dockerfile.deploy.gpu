@@ -37,6 +37,10 @@ RUN mkdir -p /app/cache/models /app/cache/workflows
 # Run as non-root user
 RUN useradd -m -u 1000 deployuser && \
     chown -R deployuser:deployuser /app
+# Pre-install Ultralytics font to avoid runtime download in offline environment
+RUN mkdir -p /home/deployuser/.config/Ultralytics
+COPY deploy/font/Arial.Unicode.ttf /home/deployuser/.config/Ultralytics/Arial.Unicode.ttf
+RUN chown deployuser:deployuser /home/deployuser/.config/Ultralytics/Arial.Unicode.ttf
 USER deployuser
 
 EXPOSE 8000

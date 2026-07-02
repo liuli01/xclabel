@@ -3,7 +3,7 @@ name: sv30
 pipeline:
 - id: '1'
   type: input
-  input_type: url
+  input_type: upload
   url: https://free.boltp.com/2026/07/01/6a4478e0c1a1c.webp
 - id: '2'
   type: yolo
@@ -16,7 +16,7 @@ pipeline:
   - '1'
 - id: '3'
   type: calc
-  expression: height/930
+  expression: max(min(height/930, 1), 0)
   condition: ''
   params:
     output_field: computed

@@ -473,6 +473,11 @@ class RefreshPipelineRequest(BaseModel):
     server_url: Optional[str] = Field(default=None, description="Server URL to re-download from")
 
 
+class SaveWorkflowRequest(BaseModel):
+    name: str = Field(..., description="Workflow name to save")
+    yaml_content: str = Field(..., description="Workflow YAML content")
+
+
 @app.post("/pipeline/refresh")
 async def pipeline_refresh(req: RefreshPipelineRequest):
     """Force-reload a workflow from server, updating both disk and memory cache."""
@@ -642,6 +647,29 @@ async def cache_models_clear():
         "status": "ok",
         "removed_from_memory": mem_count,
         "removed_from_disk": removed_dirs,
+    }
+
+
+@app.post("/cache/workflows/save")
+async def cache_workflow_save(req: SaveWorkflowRequest):
+    """Save edited workflow YAML to disk cache and reload into memory."""
+    # Validate YAML before saving
+    try:
+        config = _parse_workflow_yaml(req.yaml_content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid YAML: {str(e)}")
+
+    # Save to disk cache
+    _save_workflow_to_cache(req.name, req.yaml_content)
+
+    # Reload into memory
+    mgr = PipelineManager.from_config(config)
+    await pipeline_store.add(req.name, mgr)
+
+    return {
+        "status": "ok",
+        "name": req.name,
+        "size": len(req.yaml_content),
     }
 
 

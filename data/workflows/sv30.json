@@ -28,11 +28,11 @@
       ],
       "title": "Input [0ms]",
       "properties": {
-        "input_type": "url",
+        "input_type": "upload",
         "url": "https://free.boltp.com/2026/07/01/6a4478e0c1a1c.webp"
       },
       "widgets_values": [
-        "url"
+        "upload"
       ],
       "boxcolor": "#27ae60"
     },
@@ -67,7 +67,7 @@
           "type": "array"
         }
       ],
-      "title": "YOLO [557ms]",
+      "title": "YOLO [250ms]",
       "properties": {
         "model": "sv30_seg/20260618_172731",
         "task": "segment",
@@ -119,7 +119,7 @@
       ],
       "title": "计算 [0ms]",
       "properties": {
-        "expression": "height/930",
+        "expression": "max(min(height/930, 1), 0)",
         "output_field": "computed",
         "condition": ""
       },
